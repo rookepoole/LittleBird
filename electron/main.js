@@ -4,7 +4,7 @@ const net = require("node:net");
 const path = require("node:path");
 
 const DEFAULT_PORT = Number(process.env.PORT || 4173);
-const APP_VERSION = "0.3.2";
+const APP_VERSION = "0.3.3";
 
 app.disableHardwareAcceleration();
 app.commandLine.appendSwitch("disable-gpu");

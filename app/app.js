@@ -1,5 +1,5 @@
 const STORAGE_KEY = "local-companion-state-v1";
-const APP_VERSION = "0.3.2";
+const APP_VERSION = "0.3.3";
 const RELEASE_API_URL = "https://api.github.com/repos/rookepoole/LittleBird/releases/latest";
 
 const defaultState = {
