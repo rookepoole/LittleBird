@@ -56,6 +56,16 @@ async function run() {
     const update = await json("/api/update");
     record("update endpoint is local and safe", update.response.status === 200 && update.body.currentVersion, update.body.message || "");
 
+    const updateInstallGet = await fetch(`${base}/api/update/install`);
+    record("update install rejects GET", updateInstallGet.status === 405, String(updateInstallGet.status));
+
+    const updateInstallBadOrigin = await json("/api/update/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: "https://evil.example" },
+      body: "{}"
+    });
+    record("update install rejects foreign origin", updateInstallBadOrigin.response.status === 403, String(updateInstallBadOrigin.response.status));
+
     const status = await json("/api/bird/status");
     record("bird status endpoint", status.response.status === 200 && status.body.provider === "ollama", status.body.message);
 

@@ -3,15 +3,17 @@ const fsSync = require("node:fs");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const { spawn } = require("node:child_process");
 
 const ROOT = __dirname;
 const DATA_ROOT = process.env.LITTLE_BIRD_DATA_DIR ? path.resolve(process.env.LITTLE_BIRD_DATA_DIR) : ROOT;
 fsSync.mkdirSync(DATA_ROOT, { recursive: true });
-const APP_VERSION = process.env.LITTLE_BIRD_VERSION || "0.3.9";
+const APP_VERSION = process.env.LITTLE_BIRD_VERSION || "0.3.10";
 const APP_SLUG = safeAppSlug(process.env.APP_SLUG || "little-bird");
 const TOKEN_PATH = path.join(DATA_ROOT, `.${APP_SLUG}-tokens.json`);
 const STATE_PATH = path.join(DATA_ROOT, `.${APP_SLUG}-oauth-state.json`);
 const MAX_JSON_BODY_BYTES = 32_000;
+const MAX_INSTALLER_BYTES = 250 * 1024 * 1024;
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
 loadEnvFile();
@@ -68,6 +70,11 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/update") {
       if (!requireMethod(req, res, "GET")) return;
       sendJson(res, 200, await updatePayload());
+      return;
+    }
+    if (url.pathname === "/api/update/install") {
+      if (!requireMethod(req, res, "POST") || !requireTrustedOrigin(req, res)) return;
+      sendJson(res, 200, await installUpdatePayload());
       return;
     }
     if (url.pathname === "/api/sync") {
@@ -544,8 +551,7 @@ async function updatePayload() {
   }
 
   try {
-    const manifest = await fetchJsonWithTimeout(UPDATE_MANIFEST_URL, 6000);
-    const latest = normalizeUpdateManifest(manifest);
+    const latest = await fetchLatestUpdate();
     const latestVersion = stripVersionPrefix(latest.version || APP_VERSION);
     return {
       ...current,
@@ -565,6 +571,48 @@ async function updatePayload() {
   }
 }
 
+async function installUpdatePayload() {
+  if (!UPDATE_MANIFEST_URL) {
+    throw httpError(400, "No update feed is configured.");
+  }
+
+  const latest = await fetchLatestUpdate();
+  const latestVersion = stripVersionPrefix(latest.version || APP_VERSION);
+  if (compareVersions(latestVersion, APP_VERSION) <= 0) {
+    return {
+      ok: true,
+      installed: false,
+      currentVersion: APP_VERSION,
+      latestVersion,
+      message: "Little Bird is already up to date."
+    };
+  }
+  if (!isTrustedInstallerUrl(latest.downloadUrl)) {
+    throw httpError(400, "Update installer URL is not trusted.");
+  }
+
+  const installerPath = await installerTargetPath(latestVersion);
+  const download = await downloadInstaller(latest.downloadUrl, installerPath, latest.sha256);
+  await launchInstaller(installerPath);
+
+  return {
+    ok: true,
+    installed: false,
+    launched: true,
+    currentVersion: APP_VERSION,
+    latestVersion,
+    installerPath,
+    sha256: download.sha256,
+    size: download.size,
+    message: "Little Bird installer opened. Follow the Windows prompts to finish updating."
+  };
+}
+
+async function fetchLatestUpdate() {
+  const manifest = await fetchJsonWithTimeout(UPDATE_MANIFEST_URL, 6000);
+  return normalizeUpdateManifest(manifest);
+}
+
 function normalizeUpdateManifest(manifest) {
   const githubAsset = Array.isArray(manifest.assets)
     ? manifest.assets.find((asset) => String(asset.name || "").toLowerCase().endsWith(".exe")) || manifest.assets[0]
@@ -572,9 +620,86 @@ function normalizeUpdateManifest(manifest) {
   return {
     version: manifest.version || manifest.tag_name || manifest.name || APP_VERSION,
     downloadUrl: manifest.downloadUrl || manifest.download_url || githubAsset?.browser_download_url || "",
+    sha256: normalizeDigest(manifest.sha256 || manifest.digest || githubAsset?.digest),
     releaseNotes: manifest.releaseNotes || manifest.body || manifest.notes || "",
     publishedAt: manifest.publishedAt || manifest.published_at || ""
   };
+}
+
+function normalizeDigest(value) {
+  const digest = String(value || "").trim().toLowerCase();
+  const match = digest.match(/^(?:sha256:)?([a-f0-9]{64})$/);
+  return match ? match[1] : "";
+}
+
+function isTrustedInstallerUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:"
+      && url.hostname === "github.com"
+      && url.pathname.startsWith("/rookepoole/LittleBird/releases/download/")
+      && url.pathname.toLowerCase().endsWith(".exe");
+  } catch {
+    return false;
+  }
+}
+
+async function installerTargetPath(version) {
+  const updatesDir = path.join(DATA_ROOT, "updates");
+  await fs.mkdir(updatesDir, { recursive: true });
+  const safeVersion = String(version || APP_VERSION).replace(/[^0-9A-Za-z.-]/g, "");
+  return path.join(updatesDir, `LittleBirdSetup-${safeVersion || APP_VERSION}.exe`);
+}
+
+async function downloadInstaller(url, targetPath, expectedSha256) {
+  const response = await fetch(url, {
+    headers: { "Accept": "application/octet-stream" }
+  });
+  if (!response.ok || !response.body) {
+    throw httpError(502, `Installer download failed: ${response.status} ${response.statusText}`.trim());
+  }
+
+  const hash = crypto.createHash("sha256");
+  const file = await fs.open(targetPath, "w", 0o600);
+  let size = 0;
+  let completed = false;
+  try {
+    for await (const chunk of response.body) {
+      const buffer = Buffer.from(chunk);
+      size += buffer.length;
+      if (size > MAX_INSTALLER_BYTES) {
+        throw httpError(413, "Installer download is larger than expected.");
+      }
+      hash.update(buffer);
+      await file.write(buffer);
+    }
+    completed = true;
+  } finally {
+    await file.close();
+    if (!completed) await fs.unlink(targetPath).catch(() => {});
+  }
+
+  const sha256 = hash.digest("hex");
+  if (expectedSha256 && sha256 !== expectedSha256) {
+    await fs.unlink(targetPath).catch(() => {});
+    throw httpError(502, "Installer checksum did not match the GitHub release digest.");
+  }
+  return { sha256, size };
+}
+
+function launchInstaller(installerPath) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(installerPath, [], {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: false
+    });
+    child.once("error", reject);
+    child.once("spawn", () => {
+      child.unref();
+      resolve();
+    });
+  });
 }
 
 function stripVersionPrefix(value) {

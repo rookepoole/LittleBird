@@ -1,5 +1,5 @@
 {
-  "version": "0.3.9",
+  "version": "0.3.10",
   "downloadUrl": "https://github.com/rookepoole/LittleBird/releases/latest/download/LittleBirdSetup.exe",
-  "releaseNotes": "Fixed bottom navigation so it stays anchored while scrolling, plus Little Bird message typing reliability."
+  "releaseNotes": "In-app update checks now stay in place and the Install button opens the trusted Windows installer."
 }

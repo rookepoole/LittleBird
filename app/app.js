@@ -1,5 +1,5 @@
 const STORAGE_KEY = "local-companion-state-v1";
-const APP_VERSION = "0.3.9";
+const APP_VERSION = "0.3.10";
 const RELEASE_API_URL = "https://api.github.com/repos/rookepoole/LittleBird/releases/latest";
 
 const defaultState = {
@@ -36,7 +36,8 @@ const defaultState = {
     downloadUrl: "",
     releaseNotes: "",
     message: "Check for updates after the release feed is configured.",
-    checkedAt: ""
+    checkedAt: "",
+    installing: false
   },
   dataMode: "connected",
   lastSync: "Connect to sync",
@@ -937,6 +938,14 @@ async function refreshBirdStatus() {
 }
 
 async function refreshUpdateStatus(showResult = false) {
+  if (showResult) {
+    state.updates = {
+      ...state.updates,
+      installing: false,
+      message: "Checking for Little Bird updates..."
+    };
+    refreshSettingsUpdateCard();
+  }
   try {
     const response = await fetch(`${getApiBase()}/api/update`);
     const payload = await response.json().catch(() => ({}));
@@ -950,22 +959,43 @@ async function refreshUpdateStatus(showResult = false) {
       downloadUrl: updatePayload.downloadUrl || "",
       releaseNotes: updatePayload.releaseNotes || "",
       message: updatePayload.message || "Update status unavailable.",
-      checkedAt: new Date().toISOString()
+      checkedAt: new Date().toISOString(),
+      installing: false
     };
     saveState();
-    if (modalRoot.querySelector("form[data-form='settings']")) modalRoot.innerHTML = renderModal("settings");
+    refreshSettingsUpdateCard();
     if (showResult) showToast(state.updates.available ? "Update available" : state.updates.message);
   } catch (error) {
     state.updates = {
       ...state.updates,
       available: false,
       message: `Update check failed. ${error.message}`,
-      checkedAt: new Date().toISOString()
+      checkedAt: new Date().toISOString(),
+      installing: false
     };
     saveState();
-    if (modalRoot.querySelector("form[data-form='settings']")) modalRoot.innerHTML = renderModal("settings");
+    refreshSettingsUpdateCard();
     if (showResult) showToast("Update check failed");
   }
+}
+
+function refreshSettingsUpdateCard() {
+  const card = modalRoot.querySelector("[data-update-card]");
+  if (!card) return false;
+  const modal = modalRoot.querySelector(".modal");
+  const scrollTop = modal?.scrollTop || 0;
+  const activeAction = document.activeElement?.closest?.("[data-action]")?.dataset.action || "";
+  card.outerHTML = updateCard();
+  if (modal) modal.scrollTop = scrollTop;
+  const nextFocus = activeAction ? modalRoot.querySelector(`[data-action="${activeAction}"]`) : null;
+  if (nextFocus) {
+    try {
+      nextFocus.focus({ preventScroll: true });
+    } catch {
+      nextFocus.focus();
+    }
+  }
+  return true;
 }
 
 async function fetchReleaseUpdateFallback() {
@@ -1011,6 +1041,54 @@ function openUpdateDownload() {
     return;
   }
   window.open(url, "_blank", "noopener,noreferrer");
+}
+
+async function installUpdate() {
+  const url = state.updates?.downloadUrl || "";
+  if (!/^https:\/\//i.test(url)) {
+    showToast("No secure update link available");
+    return;
+  }
+  state.updates = {
+    ...state.updates,
+    installing: true,
+    message: "Preparing the Little Bird installer..."
+  };
+  saveState();
+  refreshSettingsUpdateCard();
+
+  try {
+    const response = await fetch(`${getApiBase()}/api/update/install`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}"
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.ok === false) {
+      throw new Error(payload.message || payload.error || `Server returned ${response.status}`);
+    }
+    state.updates = {
+      ...state.updates,
+      latestVersion: payload.latestVersion || state.updates.latestVersion,
+      installing: false,
+      message: payload.message || "Little Bird installer opened. Follow the Windows prompts to finish updating.",
+      checkedAt: new Date().toISOString()
+    };
+    saveState();
+    refreshSettingsUpdateCard();
+    showToast(payload.launched ? "Installer opened" : state.updates.message);
+  } catch (error) {
+    state.updates = {
+      ...state.updates,
+      installing: false,
+      message: `Installer launcher unavailable. Opening the download instead. ${error.message}`,
+      checkedAt: new Date().toISOString()
+    };
+    saveState();
+    refreshSettingsUpdateCard();
+    showToast("Opening installer download");
+    openUpdateDownload();
+  }
 }
 
 function connectIntegration(provider) {
@@ -1174,7 +1252,7 @@ async function handleModalClick(event) {
     return;
   }
 
-  const updateButton = event.target.closest("[data-action='check-update'], [data-action='open-update']");
+  const updateButton = event.target.closest("[data-action='check-update'], [data-action='install-update'], [data-action='open-update']");
   if (updateButton) {
     const form = modalRoot.querySelector("form[data-form='settings']");
     if (form) {
@@ -1183,6 +1261,10 @@ async function handleModalClick(event) {
     }
     if (updateButton.dataset.action === "check-update") {
       await refreshUpdateStatus(true);
+      return;
+    }
+    if (updateButton.dataset.action === "install-update") {
+      await installUpdate();
       return;
     }
     openUpdateDownload();
@@ -1464,8 +1546,9 @@ function updateCard() {
   const checked = update.checkedAt ? `Checked ${formatTime(update.checkedAt)}` : "Not checked yet";
   const status = update.available ? "Update available" : "Installed";
   const canDownload = update.available && /^https:\/\//i.test(update.downloadUrl || "");
+  const isInstalling = Boolean(update.installing);
   return `
-    <div class="card update-card">
+    <div class="card update-card" data-update-card>
       <div class="update-head">
         <div>
           <h3>Updates</h3>
@@ -1476,8 +1559,8 @@ function updateCard() {
       <p class="subtle">${escapeHTML(update.message || "Use Check after a release feed is configured.")}</p>
       ${update.releaseNotes ? `<p class="release-note">${escapeHTML(update.releaseNotes).slice(0, 180)}</p>` : ""}
       <div class="update-actions">
-        <button class="button secondary" type="button" data-action="check-update">Check</button>
-        <button class="button" type="button" data-action="open-update" ${canDownload ? "" : "disabled"}>Download</button>
+        <button class="button secondary" type="button" data-action="check-update" ${isInstalling ? "disabled" : ""}>Check</button>
+        <button class="button" type="button" data-action="install-update" ${canDownload && !isInstalling ? "" : "disabled"}>${isInstalling ? "Preparing..." : "Install"}</button>
       </div>
       <p class="subtle">${escapeHTML(checked)}</p>
     </div>
