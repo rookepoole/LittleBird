@@ -1,5 +1,5 @@
 const STORAGE_KEY = "local-companion-state-v1";
-const APP_VERSION = "0.3.7";
+const APP_VERSION = "0.3.8";
 const RELEASE_API_URL = "https://api.github.com/repos/rookepoole/LittleBird/releases/latest";
 
 const defaultState = {
@@ -175,6 +175,7 @@ const defaultState = {
 let state = normalizeState(loadState());
 let route = "home";
 let toastTimer;
+let birdDraft = "";
 
 const screen = document.querySelector("#screen");
 const viewTitle = document.querySelector("#viewTitle");
@@ -324,6 +325,10 @@ function setRoute(nextRoute) {
 }
 
 function render() {
+  const activeWasBirdInput = document.activeElement?.matches?.(".bird-compose input[name='message']");
+  const existingBirdInput = screen.querySelector(".bird-compose input[name='message']");
+  if (existingBirdInput) birdDraft = existingBirdInput.value;
+
   document.body.dataset.route = route;
   const appName = state.business?.appName || defaultState.business.appName;
   const businessName = state.business?.businessName || defaultState.business.businessName;
@@ -344,6 +349,14 @@ function render() {
 
   screen.innerHTML = renderers[route]();
   requestAnimationFrame(() => {
+    const birdInput = screen.querySelector(".bird-compose input[name='message']");
+    if (birdInput) {
+      birdInput.value = birdDraft;
+      if (activeWasBirdInput) {
+        birdInput.focus();
+        birdInput.setSelectionRange(birdInput.value.length, birdInput.value.length);
+      }
+    }
     screen.querySelectorAll(".progress-fill").forEach((bar) => {
       bar.style.width = `${bar.dataset.progress}%`;
     });
@@ -588,7 +601,7 @@ function renderBird() {
 
     <section class="section">
       <form class="bird-compose" data-form="bird-inline">
-        <input name="message" type="text" autocomplete="off" placeholder="Ask for analysis, ideas, or reminders" aria-label="Bird message">
+        <input name="message" type="text" autocomplete="off" value="${escapeHTML(birdDraft)}" placeholder="Ask for analysis, ideas, or reminders" aria-label="Bird message">
         <button class="send-button" type="button" data-action="send-bird-inline" aria-label="Send message"><svg><use href="#icon-send"></use></svg></button>
       </form>
     </section>
@@ -748,11 +761,16 @@ async function submitBirdInline(form) {
   const input = form.elements.message;
   const text = input.value.trim();
   if (!text) return;
+  birdDraft = "";
   input.value = "";
   await sendBirdMessage(text);
 }
 
 function handleScreenInput(event) {
+  if (event.target.matches(".bird-compose input[name='message']")) {
+    birdDraft = event.target.value;
+    return;
+  }
   if (event.target.id !== "contentIdeas") return;
   state.contentIdeas = event.target.value;
   saveState();
