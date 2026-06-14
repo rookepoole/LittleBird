@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Version to build, for example 0.3.0
+        description: Version to build, for example 0.3.1
         required: true
-        default: 0.3.0
+        default: 0.3.1
   push:
     tags:
       - "v*"
@@ -45,6 +45,10 @@ jobs:
       - name: Red-team local API
         shell: pwsh
         run: npm run test:api
+
+      - name: Dependency audit
+        shell: pwsh
+        run: npm audit --audit-level=critical
 
       - name: Build Windows installer
         shell: pwsh

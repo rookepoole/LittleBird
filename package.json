@@ -1,6 +1,6 @@
 {
   "name": "little-bird",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Local-first small-business companion app with store metrics and local AI.",
   "main": "electron/main.js",
   "license": "MIT",
@@ -8,7 +8,7 @@
   "scripts": {
     "desktop": "electron .",
     "test:api": "node scripts/redteam-api-check.js",
-    "dist:win": "electron-builder --win nsis --x64"
+    "dist:win": "electron-builder --win nsis --x64 --publish never"
   },
   "devDependencies": {
     "electron": "^33.4.11",

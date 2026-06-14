@@ -4,7 +4,7 @@ const net = require("node:net");
 const path = require("node:path");
 
 const DEFAULT_PORT = Number(process.env.PORT || 4173);
-const APP_VERSION = "0.3.0";
+const APP_VERSION = "0.3.1";
 
 let mainWindow;
 let serverProcess;
