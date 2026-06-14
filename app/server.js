@@ -7,7 +7,7 @@ const crypto = require("node:crypto");
 const ROOT = __dirname;
 const DATA_ROOT = process.env.LITTLE_BIRD_DATA_DIR ? path.resolve(process.env.LITTLE_BIRD_DATA_DIR) : ROOT;
 fsSync.mkdirSync(DATA_ROOT, { recursive: true });
-const APP_VERSION = process.env.LITTLE_BIRD_VERSION || "0.3.5";
+const APP_VERSION = process.env.LITTLE_BIRD_VERSION || "0.3.6";
 const APP_SLUG = safeAppSlug(process.env.APP_SLUG || "little-bird");
 const TOKEN_PATH = path.join(DATA_ROOT, `.${APP_SLUG}-tokens.json`);
 const STATE_PATH = path.join(DATA_ROOT, `.${APP_SLUG}-oauth-state.json`);

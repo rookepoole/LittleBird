@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Version to build, for example 0.3.5
+        description: Version to build, for example 0.3.6
         required: true
-        default: 0.3.5
+        default: 0.3.6
   push:
     tags:
       - "v*"

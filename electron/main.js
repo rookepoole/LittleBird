@@ -4,7 +4,7 @@ const net = require("node:net");
 const path = require("node:path");
 
 const DEFAULT_PORT = Number(process.env.PORT || 4173);
-const APP_VERSION = "0.3.5";
+const APP_VERSION = "0.3.6";
 const APP_ID = "com.rookepoole.littlebird";
 
 app.disableHardwareAcceleration();
@@ -12,6 +12,13 @@ app.commandLine.appendSwitch("disable-gpu");
 app.commandLine.appendSwitch("disable-gpu-compositing");
 app.commandLine.appendSwitch("disable-gpu-rasterization");
 app.commandLine.appendSwitch("disable-gpu-sandbox");
+app.commandLine.appendSwitch("disable-software-rasterizer");
+app.commandLine.appendSwitch("disable-accelerated-2d-canvas");
+app.commandLine.appendSwitch("disable-accelerated-video-decode");
+app.commandLine.appendSwitch(
+  "disable-features",
+  "Vulkan,WebGPU,DawnGraphite,CanvasOopRasterization,UseSkiaRenderer,CalculateNativeWinOcclusion"
+);
 
 let mainWindow;
 let serverProcess;
