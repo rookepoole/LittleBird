@@ -4,7 +4,8 @@ const net = require("node:net");
 const path = require("node:path");
 
 const DEFAULT_PORT = Number(process.env.PORT || 4173);
-const APP_VERSION = "0.3.3";
+const APP_VERSION = "0.3.4";
+const APP_ID = "com.rookepoole.littlebird";
 
 app.disableHardwareAcceleration();
 app.commandLine.appendSwitch("disable-gpu");
@@ -17,6 +18,9 @@ let serverProcess;
 let serverPort = DEFAULT_PORT;
 
 app.setName("Little Bird");
+if (process.platform === "win32") {
+  app.setAppUserModelId(APP_ID);
+}
 
 const singleInstance = app.requestSingleInstanceLock();
 if (!singleInstance) {
@@ -24,9 +28,7 @@ if (!singleInstance) {
 }
 
 app.on("second-instance", () => {
-  if (!mainWindow) return;
-  if (mainWindow.isMinimized()) mainWindow.restore();
-  mainWindow.focus();
+  showMainWindow();
 });
 
 app.whenReady().then(async () => {
@@ -80,7 +82,7 @@ async function startLocalServer() {
 }
 
 function createWindow(port) {
-  mainWindow = new BrowserWindow({
+  const windowOptions = {
     width: 520,
     height: 900,
     minWidth: 420,
@@ -88,17 +90,25 @@ function createWindow(port) {
     title: "Little Bird",
     backgroundColor: "#111111",
     autoHideMenuBar: true,
-    show: false,
+    show: true,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true
     }
-  });
+  };
 
-  mainWindow.once("ready-to-show", () => {
-    mainWindow.show();
-  });
+  const iconPath = getIconPath();
+  if (iconPath) {
+    windowOptions.icon = iconPath;
+  }
+
+  mainWindow = new BrowserWindow(windowOptions);
+  mainWindow.center();
+
+  mainWindow.once("ready-to-show", showMainWindow);
+  mainWindow.webContents.once("did-finish-load", showMainWindow);
+  setTimeout(showMainWindow, 1200);
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith("https://github.com/rookepoole/LittleBird/releases/")) {
@@ -108,6 +118,13 @@ function createWindow(port) {
   });
 
   mainWindow.loadURL(`http://127.0.0.1:${port}/?v=${APP_VERSION}`);
+}
+
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  if (!mainWindow.isVisible()) mainWindow.show();
+  mainWindow.focus();
 }
 
 function stopLocalServer() {
@@ -122,6 +139,11 @@ function getBundledAppDir() {
     return path.join(process.resourcesPath, "little-bird-app");
   }
   return path.join(__dirname, "..", "app");
+}
+
+function getIconPath() {
+  const iconFile = process.platform === "win32" ? "icon.ico" : "icon-256.png";
+  return path.join(__dirname, "..", "resources", iconFile);
 }
 
 async function choosePort(preferredPort) {
