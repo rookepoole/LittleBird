@@ -16,5 +16,5 @@ if errorlevel 1 (
 )
 
 echo Starting Little Bird...
-echo Open http://127.0.0.1:4173/?v=0.3.6 in your browser, unless you pass a custom --port.
+echo Open http://127.0.0.1:4173/?v=0.3.7 in your browser, unless you pass a custom --port.
 "%NODE_EXE%" server.js %*

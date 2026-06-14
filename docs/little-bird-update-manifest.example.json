@@ -1,5 +1,5 @@
 {
-  "version": "0.3.6",
+  "version": "0.3.7",
   "downloadUrl": "https://github.com/rookepoole/LittleBird/releases/latest/download/LittleBirdSetup.exe",
-  "releaseNotes": "Connected-first store sync, richer product context for Little Bird, and GitHub release update checks."
+  "releaseNotes": "Windows desktop renderer startup fix, connected-first store sync, richer product context for Little Bird, and GitHub release update checks."
 }
