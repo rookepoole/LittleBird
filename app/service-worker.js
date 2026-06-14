@@ -1,4 +1,4 @@
-const CACHE_NAME = "little-bird-static-v8";
+const CACHE_NAME = "little-bird-static-v9";
 const STATIC_ASSETS = [
   "/",
   "/index.html",

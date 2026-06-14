@@ -1,5 +1,5 @@
 const STORAGE_KEY = "local-companion-state-v1";
-const APP_VERSION = "0.3.4";
+const APP_VERSION = "0.3.5";
 const RELEASE_API_URL = "https://api.github.com/repos/rookepoole/LittleBird/releases/latest";
 
 const defaultState = {
@@ -286,9 +286,21 @@ function makeWordmark(value) {
 
 function registerServiceWorker() {
   if (!("serviceWorker" in navigator) || location.protocol === "file:") return;
+  if (isDesktopShell()) {
+    navigator.serviceWorker.getRegistrations()
+      .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
+      .catch(() => {
+        // Desktop runs live from the bundled local server and does not need offline caching.
+      });
+    return;
+  }
   navigator.serviceWorker.register("service-worker.js").catch(() => {
     // The app remains fully usable without offline caching.
   });
+}
+
+function isDesktopShell() {
+  return new URLSearchParams(location.search).get("desktop") === "1" || /\bElectron\b/i.test(navigator.userAgent);
 }
 
 function wireGlobalEvents() {

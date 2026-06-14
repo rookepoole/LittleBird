@@ -1,10 +1,10 @@
-const { app, BrowserWindow, dialog, shell } = require("electron");
+const { app, BrowserWindow, dialog, session, shell } = require("electron");
 const { spawn } = require("node:child_process");
 const net = require("node:net");
 const path = require("node:path");
 
 const DEFAULT_PORT = Number(process.env.PORT || 4173);
-const APP_VERSION = "0.3.4";
+const APP_VERSION = "0.3.5";
 const APP_ID = "com.rookepoole.littlebird";
 
 app.disableHardwareAcceleration();
@@ -16,6 +16,7 @@ app.commandLine.appendSwitch("disable-gpu-sandbox");
 let mainWindow;
 let serverProcess;
 let serverPort = DEFAULT_PORT;
+let rendererReloads = 0;
 
 app.setName("Little Bird");
 if (process.platform === "win32") {
@@ -28,11 +29,16 @@ if (!singleInstance) {
 }
 
 app.on("second-instance", () => {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow(serverPort);
+    return;
+  }
   showMainWindow();
 });
 
 app.whenReady().then(async () => {
   try {
+    await resetRendererStorage();
     serverPort = await startLocalServer();
     createWindow(serverPort);
   } catch (error) {
@@ -82,6 +88,7 @@ async function startLocalServer() {
 }
 
 function createWindow(port) {
+  rendererReloads = 0;
   const windowOptions = {
     width: 520,
     height: 900,
@@ -105,9 +112,16 @@ function createWindow(port) {
 
   mainWindow = new BrowserWindow(windowOptions);
   mainWindow.center();
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+  });
 
   mainWindow.once("ready-to-show", showMainWindow);
   mainWindow.webContents.once("did-finish-load", showMainWindow);
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    console.error(`Little Bird renderer stopped: ${details.reason || "unknown"} ${details.exitCode || ""}`.trim());
+    recoverRenderer(port);
+  });
   setTimeout(showMainWindow, 1200);
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -117,7 +131,7 @@ function createWindow(port) {
     return { action: "deny" };
   });
 
-  mainWindow.loadURL(`http://127.0.0.1:${port}/?v=${APP_VERSION}`);
+  mainWindow.loadURL(getAppUrl(port));
 }
 
 function showMainWindow() {
@@ -144,6 +158,38 @@ function getBundledAppDir() {
 function getIconPath() {
   const iconFile = process.platform === "win32" ? "icon.ico" : "icon-256.png";
   return path.join(__dirname, "..", "resources", iconFile);
+}
+
+async function resetRendererStorage() {
+  try {
+    await session.defaultSession.clearCache();
+    await session.defaultSession.clearStorageData({
+      storages: ["cachestorage", "serviceworkers"]
+    });
+  } catch (error) {
+    console.error(`Little Bird cache reset skipped: ${error.message}`);
+  }
+}
+
+function recoverRenderer(port) {
+  if (!mainWindow || mainWindow.isDestroyed() || app.isQuitting) return;
+  if (rendererReloads >= 2) {
+    dialog.showErrorBox(
+      "Little Bird window stopped",
+      "The desktop window restarted more than once. Close Little Bird and open it again from the desktop shortcut."
+    );
+    return;
+  }
+  rendererReloads += 1;
+  setTimeout(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.loadURL(getAppUrl(port));
+    showMainWindow();
+  }, 500);
+}
+
+function getAppUrl(port) {
+  return `http://127.0.0.1:${port}/?v=${APP_VERSION}&desktop=1`;
 }
 
 async function choosePort(preferredPort) {
