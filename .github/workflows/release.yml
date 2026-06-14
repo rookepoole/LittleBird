@@ -1,0 +1,65 @@
+name: Build Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to build, for example 0.2.0
+        required: true
+        default: 0.2.0
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Resolve build version
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            "value=${{ github.event.inputs.version }}" >> $env:GITHUB_OUTPUT
+          } else {
+            $refName = $env:GITHUB_REF_NAME
+            "value=$($refName.TrimStart('v'))" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: ./scripts/build-windows-installer.ps1 -Version "${{ steps.version.outputs.value }}"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: little-bird-windows
+          path: |
+            dist/LittleBirdSetup.exe
+            dist/little-bird-local-app.zip
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${env:GITHUB_REF_NAME}"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag dist/LittleBirdSetup.exe dist/little-bird-local-app.zip --title "Little Bird $tag" --notes "Little Bird Windows installer and portable local app build."
+          } else {
+            gh release upload $tag dist/LittleBirdSetup.exe dist/little-bird-local-app.zip --clobber
+          }

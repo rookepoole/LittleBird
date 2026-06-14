@@ -1,0 +1,18 @@
+{
+  "name": "Little Bird",
+  "short_name": "Little Bird",
+  "description": "A private local app for small-business goals, metrics, integrations, and local AI help.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f7f7f7",
+  "theme_color": "#3a8af8",
+  "icons": [
+    {
+      "src": "assets/bird-mark.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

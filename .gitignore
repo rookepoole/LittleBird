@@ -1,0 +1,9 @@
+.env
+.little-bird-tokens.json
+.little-bird-oauth-state.json
+app/.env
+app/.little-bird-tokens.json
+app/.little-bird-oauth-state.json
+build/
+dist/
+*.log
