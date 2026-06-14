@@ -8,7 +8,7 @@ const { spawn } = require("node:child_process");
 const ROOT = __dirname;
 const DATA_ROOT = process.env.LITTLE_BIRD_DATA_DIR ? path.resolve(process.env.LITTLE_BIRD_DATA_DIR) : ROOT;
 fsSync.mkdirSync(DATA_ROOT, { recursive: true });
-const APP_VERSION = process.env.LITTLE_BIRD_VERSION || "0.3.10";
+const APP_VERSION = process.env.LITTLE_BIRD_VERSION || "0.3.11";
 const APP_SLUG = safeAppSlug(process.env.APP_SLUG || "little-bird");
 const TOKEN_PATH = path.join(DATA_ROOT, `.${APP_SLUG}-tokens.json`);
 const STATE_PATH = path.join(DATA_ROOT, `.${APP_SLUG}-oauth-state.json`);
@@ -164,6 +164,14 @@ function loadEnvFile() {
       process.env[key] = value;
     }
   }
+}
+
+function envValue(key) {
+  const value = String(process.env[key] || "").trim();
+  if (!value) return "";
+  if (/^(your_|shpat_your|test_|example)/i.test(value)) return "";
+  if (/your_[a-z0-9_]+/i.test(value)) return "";
+  return value;
 }
 
 function parseCliArgs(args) {
@@ -507,6 +515,7 @@ function limitText(value, max) {
 function healthPayload() {
   const tokens = readTokenStore();
   const statuses = integrationStatuses(tokens);
+  const setup = integrationSetupPayload(tokens);
   return {
     ok: true,
     app: {
@@ -519,10 +528,11 @@ function healthPayload() {
       tiktok: statuses["TikTok Shop"] === "Connected"
     },
     oauthReady: {
-      shopify: Boolean(process.env.SHOPIFY_CLIENT_ID && process.env.SHOPIFY_CLIENT_SECRET),
-      meta: Boolean(process.env.META_APP_ID && process.env.META_APP_SECRET),
-      tiktok: Boolean(getTikTokAppId() && getTikTokAppSecret())
+      shopify: oauthReady("shopify"),
+      meta: oauthReady("meta"),
+      tiktok: oauthReady("tiktok")
     },
+    setup,
     versions: {
       shopify: SHOPIFY_VERSION,
       meta: META_VERSION,
@@ -719,23 +729,27 @@ function compareVersions(a, b) {
 
 function integrationsPayload() {
   const tokens = readTokenStore();
+  const setup = integrationSetupPayload(tokens);
   return {
     ok: true,
     integrations: integrationStatuses(tokens),
+    setup,
     details: {
       shopify: {
-        shop: tokens.shopify?.shop || cleanShopifyDomain(process.env.SHOPIFY_STORE_DOMAIN),
-        oauthReady: Boolean(process.env.SHOPIFY_CLIENT_ID && process.env.SHOPIFY_CLIENT_SECRET),
+        shop: tokens.shopify?.shop || cleanShopifyDomain(envValue("SHOPIFY_STORE_DOMAIN")),
+        oauthReady: oauthReady("shopify"),
         connectedAt: tokens.shopify?.connectedAt || null
       },
       meta: {
-        adAccountId: tokens.meta?.adAccountId || cleanMetaAdAccount(process.env.META_AD_ACCOUNT_ID),
-        oauthReady: Boolean(process.env.META_APP_ID && process.env.META_APP_SECRET),
+        adAccountId: tokens.meta?.adAccountId || cleanMetaAdAccount(envValue("META_AD_ACCOUNT_ID")),
+        adAccountName: tokens.meta?.adAccountName || "",
+        accountStatus: tokens.meta?.accountStatus || "",
+        oauthReady: oauthReady("meta"),
         connectedAt: tokens.meta?.connectedAt || null
       },
       tiktok: {
-        advertiserId: tokens.tiktok?.advertiserId || process.env.TIKTOK_ADVERTISER_ID || "",
-        oauthReady: Boolean(getTikTokAppId() && getTikTokAppSecret()),
+        advertiserId: tokens.tiktok?.advertiserId || envValue("TIKTOK_ADVERTISER_ID") || "",
+        oauthReady: oauthReady("tiktok"),
         connectedAt: tokens.tiktok?.connectedAt || null
       }
     }
@@ -750,22 +764,80 @@ function integrationStatuses(tokens = readTokenStore()) {
   };
 }
 
+function integrationSetupPayload(tokens = readTokenStore()) {
+  return {
+    shopify: integrationSetup("shopify", tokens),
+    meta: integrationSetup("meta", tokens),
+    tiktok: integrationSetup("tiktok", tokens)
+  };
+}
+
+function integrationSetup(provider, tokens = readTokenStore()) {
+  const ready = oauthReady(provider);
+  const connected = tokenOrEnvAvailable(provider, tokens);
+  const missing = missingOAuthFields(provider);
+  const label = providerLabel(provider);
+  return {
+    provider,
+    label,
+    connected,
+    oauthReady: ready,
+    missing,
+    callbackUrl: callbackUrl(provider),
+    connectUrl: `/auth/${provider}/start`,
+    message: connected
+      ? `${label} is connected.`
+      : ready
+        ? `${label} is ready for sign in.`
+        : `${label} needs app credentials before sign in can start.`
+  };
+}
+
+function missingOAuthFields(provider) {
+  if (provider === "shopify") {
+    return [
+      envValue("SHOPIFY_CLIENT_ID") ? "" : "SHOPIFY_CLIENT_ID",
+      envValue("SHOPIFY_CLIENT_SECRET") ? "" : "SHOPIFY_CLIENT_SECRET"
+    ].filter(Boolean);
+  }
+  if (provider === "meta") {
+    return [
+      envValue("META_APP_ID") ? "" : "META_APP_ID",
+      envValue("META_APP_SECRET") ? "" : "META_APP_SECRET"
+    ].filter(Boolean);
+  }
+  if (provider === "tiktok") {
+    return [
+      getTikTokAppId() ? "" : "TIKTOK_APP_ID",
+      getTikTokAppSecret() ? "" : "TIKTOK_APP_SECRET"
+    ].filter(Boolean);
+  }
+  return [];
+}
+
+function providerLabel(provider) {
+  if (provider === "shopify") return "Shopify";
+  if (provider === "meta") return "Meta Ads";
+  if (provider === "tiktok") return "TikTok Shop";
+  return "Integration";
+}
+
 function oauthReady(provider) {
-  if (provider === "shopify") return Boolean(process.env.SHOPIFY_CLIENT_ID && process.env.SHOPIFY_CLIENT_SECRET);
-  if (provider === "meta") return Boolean(process.env.META_APP_ID && process.env.META_APP_SECRET);
+  if (provider === "shopify") return Boolean(envValue("SHOPIFY_CLIENT_ID") && envValue("SHOPIFY_CLIENT_SECRET"));
+  if (provider === "meta") return Boolean(envValue("META_APP_ID") && envValue("META_APP_SECRET"));
   if (provider === "tiktok") return Boolean(getTikTokAppId() && getTikTokAppSecret());
   return false;
 }
 
 function tokenOrEnvAvailable(provider, tokens = readTokenStore()) {
   if (provider === "shopify") {
-    return Boolean(tokens.shopify?.accessToken && tokens.shopify?.shop) || Boolean(process.env.SHOPIFY_STORE_DOMAIN && process.env.SHOPIFY_ADMIN_ACCESS_TOKEN);
+    return Boolean(tokens.shopify?.accessToken && tokens.shopify?.shop) || Boolean(envValue("SHOPIFY_STORE_DOMAIN") && envValue("SHOPIFY_ADMIN_ACCESS_TOKEN"));
   }
   if (provider === "meta") {
-    return Boolean(tokens.meta?.accessToken && (tokens.meta?.adAccountId || process.env.META_AD_ACCOUNT_ID)) || Boolean(process.env.META_ACCESS_TOKEN && process.env.META_AD_ACCOUNT_ID);
+    return Boolean(tokens.meta?.accessToken && (tokens.meta?.adAccountId || envValue("META_AD_ACCOUNT_ID"))) || Boolean(envValue("META_ACCESS_TOKEN") && envValue("META_AD_ACCOUNT_ID"));
   }
   if (provider === "tiktok") {
-    return Boolean(tokens.tiktok?.accessToken && (tokens.tiktok?.advertiserId || process.env.TIKTOK_ADVERTISER_ID)) || Boolean(process.env.TIKTOK_ACCESS_TOKEN && process.env.TIKTOK_ADVERTISER_ID);
+    return Boolean(tokens.tiktok?.accessToken && (tokens.tiktok?.advertiserId || envValue("TIKTOK_ADVERTISER_ID"))) || Boolean(envValue("TIKTOK_ACCESS_TOKEN") && envValue("TIKTOK_ADVERTISER_ID"));
   }
   return false;
 }
@@ -898,8 +970,10 @@ async function maybeRun(wanted, key, fn) {
 }
 
 async function startShopifyAuth(url, res) {
-  const shop = cleanShopifyDomain(url.searchParams.get("shop") || process.env.SHOPIFY_STORE_DOMAIN);
-  if (!process.env.SHOPIFY_CLIENT_ID || !process.env.SHOPIFY_CLIENT_SECRET) {
+  const shop = cleanShopifyDomain(url.searchParams.get("shop") || envValue("SHOPIFY_STORE_DOMAIN"));
+  const clientId = envValue("SHOPIFY_CLIENT_ID");
+  const clientSecret = envValue("SHOPIFY_CLIENT_SECRET");
+  if (!clientId || !clientSecret) {
     redirectToApp(res, "shopify", "Missing SHOPIFY_CLIENT_ID or SHOPIFY_CLIENT_SECRET.");
     return;
   }
@@ -910,7 +984,7 @@ async function startShopifyAuth(url, res) {
 
   const state = createOAuthState("shopify", { shop });
   const params = new URLSearchParams({
-    client_id: process.env.SHOPIFY_CLIENT_ID,
+    client_id: clientId,
     scope: SHOPIFY_SCOPES,
     redirect_uri: callbackUrl("shopify"),
     state
@@ -935,8 +1009,8 @@ async function finishShopifyAuth(url, res) {
       method: "POST",
       headers: { "Content-Type": "application/json", "Accept": "application/json" },
       body: JSON.stringify({
-        client_id: process.env.SHOPIFY_CLIENT_ID,
-        client_secret: process.env.SHOPIFY_CLIENT_SECRET,
+        client_id: envValue("SHOPIFY_CLIENT_ID"),
+        client_secret: envValue("SHOPIFY_CLIENT_SECRET"),
         code
       })
     });
@@ -956,16 +1030,24 @@ async function finishShopifyAuth(url, res) {
 }
 
 async function startMetaAuth(url, res) {
-  if (!process.env.META_APP_ID || !process.env.META_APP_SECRET) {
+  const appId = envValue("META_APP_ID");
+  const appSecret = envValue("META_APP_SECRET");
+  if (!appId || !appSecret) {
     redirectToApp(res, "meta", "Missing META_APP_ID or META_APP_SECRET.");
     return;
   }
 
+  const adAccountId = cleanMetaAdAccount(url.searchParams.get("adAccountId") || envValue("META_AD_ACCOUNT_ID") || "");
+  if (url.searchParams.get("adAccountId") && !isValidMetaAdAccount(adAccountId)) {
+    redirectToApp(res, "meta", "Enter a valid numeric Meta ad account ID, with or without act_.");
+    return;
+  }
+
   const state = createOAuthState("meta", {
-    adAccountId: cleanMetaAdAccount(url.searchParams.get("adAccountId") || "")
+    adAccountId
   });
   const params = new URLSearchParams({
-    client_id: process.env.META_APP_ID,
+    client_id: appId,
     redirect_uri: callbackUrl("meta"),
     state,
     scope: META_SCOPES,
@@ -985,26 +1067,35 @@ async function finishMetaAuth(url, res) {
 
   try {
     const shortParams = new URLSearchParams({
-      client_id: process.env.META_APP_ID,
-      client_secret: process.env.META_APP_SECRET,
+      client_id: envValue("META_APP_ID"),
+      client_secret: envValue("META_APP_SECRET"),
       redirect_uri: callbackUrl("meta"),
       code
     });
     const shortToken = await fetchJson(`https://graph.facebook.com/${META_VERSION}/oauth/access_token?${shortParams}`);
     const longParams = new URLSearchParams({
       grant_type: "fb_exchange_token",
-      client_id: process.env.META_APP_ID,
-      client_secret: process.env.META_APP_SECRET,
+      client_id: envValue("META_APP_ID"),
+      client_secret: envValue("META_APP_SECRET"),
       fb_exchange_token: shortToken.access_token
     });
     const longToken = await fetchJson(`https://graph.facebook.com/${META_VERSION}/oauth/access_token?${longParams}`).catch(() => shortToken);
     const accessToken = longToken.access_token || shortToken.access_token;
-    const adAccountId = cleanMetaAdAccount(entry.adAccountId) || await findMetaAdAccount(accessToken);
+    const requestedAdAccountId = cleanMetaAdAccount(entry.adAccountId) || cleanMetaAdAccount(envValue("META_AD_ACCOUNT_ID"));
+    const account = requestedAdAccountId
+      ? await fetchMetaAdAccount(accessToken, requestedAdAccountId)
+      : await findMetaAdAccount(accessToken);
+    const adAccountId = cleanMetaAdAccount(account.accountId || account.id);
+    if (!isValidMetaAdAccount(adAccountId)) {
+      throw new Error("No Meta ad account was available for this login.");
+    }
 
     const tokens = readTokenStore();
     tokens.meta = {
       accessToken,
-      adAccountId: adAccountId || cleanMetaAdAccount(process.env.META_AD_ACCOUNT_ID),
+      adAccountId,
+      adAccountName: account.name || "",
+      accountStatus: account.accountStatus || "",
       expiresIn: longToken.expires_in || shortToken.expires_in || null,
       connectedAt: new Date().toISOString()
     };
@@ -1056,7 +1147,7 @@ async function finishTikTokAuth(url, res) {
     });
     const data = body.data || body;
     const advertiserIds = Array.isArray(data.advertiser_ids) ? data.advertiser_ids : data.advertiser_id ? [data.advertiser_id] : [];
-    const advertiserId = String(entry.advertiserId || advertiserIds[0] || process.env.TIKTOK_ADVERTISER_ID || "");
+    const advertiserId = String(entry.advertiserId || advertiserIds[0] || envValue("TIKTOK_ADVERTISER_ID") || "");
 
     const tokens = readTokenStore();
     tokens.tiktok = {
@@ -1074,30 +1165,62 @@ async function finishTikTokAuth(url, res) {
 }
 
 async function findMetaAdAccount(accessToken) {
-  if (process.env.META_AD_ACCOUNT_ID) return cleanMetaAdAccount(process.env.META_AD_ACCOUNT_ID);
+  if (envValue("META_AD_ACCOUNT_ID")) {
+    return fetchMetaAdAccount(accessToken, envValue("META_AD_ACCOUNT_ID"));
+  }
   try {
     const params = new URLSearchParams({
       access_token: accessToken,
-      fields: "account_id,id,name",
+      fields: "account_id,id,name,account_status,currency,timezone_name",
       limit: "1"
     });
     const body = await fetchJson(`https://graph.facebook.com/${META_VERSION}/me/adaccounts?${params}`);
     const account = body.data?.[0];
-    return cleanMetaAdAccount(account?.account_id || account?.id || "");
+    return normalizeMetaAccount(account);
   } catch {
-    return "";
+    return {};
   }
+}
+
+async function fetchMetaAdAccount(accessToken, adAccountId) {
+  const cleanId = cleanMetaAdAccount(adAccountId);
+  if (!isValidMetaAdAccount(cleanId)) {
+    throw new Error("Meta ad account ID must be numeric.");
+  }
+  const params = new URLSearchParams({
+    access_token: accessToken,
+    fields: "account_id,id,name,account_status,currency,timezone_name"
+  });
+  try {
+    const body = await fetchJson(`https://graph.facebook.com/${META_VERSION}/act_${cleanId}?${params}`);
+    return normalizeMetaAccount(body);
+  } catch (error) {
+    throw new Error(`Could not access Meta ad account act_${cleanId}. ${error.message}`);
+  }
+}
+
+function normalizeMetaAccount(account = {}) {
+  const accountId = cleanMetaAdAccount(account.account_id || account.id || "");
+  return {
+    accountId,
+    id: accountId,
+    name: limitText(account.name, 120),
+    accountStatus: account.account_status === undefined ? "" : String(account.account_status),
+    currency: limitText(account.currency, 12),
+    timezone: limitText(account.timezone_name, 80)
+  };
 }
 
 function verifyShopifyHmac(url) {
   const hmac = url.searchParams.get("hmac");
-  if (!hmac || !process.env.SHOPIFY_CLIENT_SECRET) return false;
+  const secret = envValue("SHOPIFY_CLIENT_SECRET");
+  if (!hmac || !secret) return false;
   const pairs = [...url.searchParams.entries()]
     .filter(([key]) => key !== "hmac" && key !== "signature")
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}=${value}`);
   const digest = crypto
-    .createHmac("sha256", process.env.SHOPIFY_CLIENT_SECRET)
+    .createHmac("sha256", secret)
     .update(pairs.join("&"))
     .digest("hex");
   return timingSafeEqual(digest, hmac);
@@ -1132,8 +1255,8 @@ function redirect(res, location) {
 
 async function fetchShopify(metrics, integrations, store, results, warnings) {
   const tokens = readTokenStore();
-  const domain = cleanShopifyDomain(tokens.shopify?.shop || process.env.SHOPIFY_STORE_DOMAIN);
-  const token = tokens.shopify?.accessToken || process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
+  const domain = cleanShopifyDomain(tokens.shopify?.shop || envValue("SHOPIFY_STORE_DOMAIN"));
+  const token = tokens.shopify?.accessToken || envValue("SHOPIFY_ADMIN_ACCESS_TOKEN");
   if (!domain || !token) {
     integrations.Shopify = oauthReady("shopify") ? "Ready to connect" : "Needs app setup";
     store.sources.shopify = { status: integrations.Shopify, domain };
@@ -1205,11 +1328,11 @@ async function fetchShopify(metrics, integrations, store, results, warnings) {
 
 async function fetchMeta(metrics, integrations, store, results, warnings) {
   const tokens = readTokenStore();
-  const token = tokens.meta?.accessToken || process.env.META_ACCESS_TOKEN;
-  const adAccountId = cleanMetaAdAccount(tokens.meta?.adAccountId || process.env.META_AD_ACCOUNT_ID);
+  const token = tokens.meta?.accessToken || envValue("META_ACCESS_TOKEN");
+  const adAccountId = cleanMetaAdAccount(tokens.meta?.adAccountId || envValue("META_AD_ACCOUNT_ID"));
   if (!token || !adAccountId) {
     integrations["Meta Ads"] = oauthReady("meta") ? "Ready to connect" : "Needs app setup";
-    store.sources.meta = { status: integrations["Meta Ads"] };
+    store.sources.meta = { status: integrations["Meta Ads"], adAccountId };
     warnings.push("Meta Ads is not connected, or no ad account was available. Use Settings > Meta Ads > Connect.");
     return;
   }
@@ -1229,7 +1352,12 @@ async function fetchMeta(metrics, integrations, store, results, warnings) {
     if (row.ctr !== undefined) metrics.ctr = roundRate(row.ctr);
     if (roas) metrics.roas = roundRate(roas);
     integrations["Meta Ads"] = "Connected";
-    store.sources.meta = { status: "Connected", connectedAt: tokens.meta?.connectedAt || null };
+    store.sources.meta = {
+      status: "Connected",
+      adAccountId,
+      name: tokens.meta?.adAccountName || "",
+      connectedAt: tokens.meta?.connectedAt || null
+    };
     store.ads.meta = {
       spend: roundMoney(spend),
       impressions: Number(row.impressions || 0),
@@ -1245,15 +1373,15 @@ async function fetchMeta(metrics, integrations, store, results, warnings) {
     };
   } catch (error) {
     integrations["Meta Ads"] = "Error";
-    store.sources.meta = { status: "Error" };
+    store.sources.meta = { status: "Error", adAccountId };
     warnings.push(`Meta Ads sync failed: ${error.message}`);
   }
 }
 
 async function fetchTikTok(metrics, integrations, store, results, warnings) {
   const tokens = readTokenStore();
-  const token = tokens.tiktok?.accessToken || process.env.TIKTOK_ACCESS_TOKEN;
-  const advertiserId = tokens.tiktok?.advertiserId || process.env.TIKTOK_ADVERTISER_ID;
+  const token = tokens.tiktok?.accessToken || envValue("TIKTOK_ACCESS_TOKEN");
+  const advertiserId = tokens.tiktok?.advertiserId || envValue("TIKTOK_ADVERTISER_ID");
   if (!token || !advertiserId) {
     integrations["TikTok Shop"] = oauthReady("tiktok") ? "Ready to connect" : "Needs app setup";
     store.sources.tiktok = { status: integrations["TikTok Shop"] };
@@ -1411,15 +1539,22 @@ function isValidShopifyShop(value = "") {
 }
 
 function cleanMetaAdAccount(value = "") {
-  return String(value).replace(/^act_/, "").trim();
+  return String(value)
+    .trim()
+    .replace(/^act_/i, "")
+    .replace(/[^\d]/g, "");
+}
+
+function isValidMetaAdAccount(value = "") {
+  return /^\d{5,}$/.test(cleanMetaAdAccount(value));
 }
 
 function getTikTokAppId() {
-  return process.env.TIKTOK_APP_ID || process.env.TIKTOK_CLIENT_KEY || "";
+  return envValue("TIKTOK_APP_ID") || envValue("TIKTOK_CLIENT_KEY") || "";
 }
 
 function getTikTokAppSecret() {
-  return process.env.TIKTOK_APP_SECRET || process.env.TIKTOK_SECRET || process.env.TIKTOK_CLIENT_SECRET || "";
+  return envValue("TIKTOK_APP_SECRET") || envValue("TIKTOK_SECRET") || envValue("TIKTOK_CLIENT_SECRET") || "";
 }
 
 function startOfTodayISO() {

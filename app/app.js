@@ -1,5 +1,5 @@
 const STORAGE_KEY = "local-companion-state-v1";
-const APP_VERSION = "0.3.10";
+const APP_VERSION = "0.3.11";
 const RELEASE_API_URL = "https://api.github.com/repos/rookepoole/LittleBird/releases/latest";
 
 const defaultState = {
@@ -170,6 +170,16 @@ const defaultState = {
     Shopify: "Not configured",
     "TikTok Shop": "Not configured",
     "Meta Ads": "Not configured"
+  },
+  integrationDetails: {
+    shopify: {},
+    meta: {},
+    tiktok: {}
+  },
+  integrationSetup: {
+    shopify: {},
+    meta: {},
+    tiktok: {}
   }
 };
 
@@ -239,8 +249,16 @@ function normalizeState(nextState) {
   nextState.store = mergeDeep(structuredCloneSafe(defaultState.store), nextState.store || {});
   nextState.integrationSettings = nextState.integrationSettings || {};
   nextState.integrationSettings.shopifyStoreDomain = nextState.integrationSettings.shopifyStoreDomain || "";
-  nextState.integrationSettings.metaAdAccountId = nextState.integrationSettings.metaAdAccountId || "";
+  nextState.integrationSettings.metaAdAccountId = cleanMetaAdAccountInput(nextState.integrationSettings.metaAdAccountId || "");
   nextState.integrationSettings.tiktokAdvertiserId = nextState.integrationSettings.tiktokAdvertiserId || "";
+  nextState.integrationDetails = {
+    ...defaultState.integrationDetails,
+    ...(nextState.integrationDetails || {})
+  };
+  nextState.integrationSetup = {
+    ...defaultState.integrationSetup,
+    ...(nextState.integrationSetup || {})
+  };
   for (const key of ["Shopify", "TikTok Shop", "Meta Ads"]) {
     if (nextState.integrations?.[key] === "Connect") {
       nextState.integrations[key] = "Not configured";
@@ -903,8 +921,20 @@ async function refreshIntegrationStatus() {
     if (!response.ok) return;
     const payload = await response.json();
     if (payload.integrations) Object.assign(state.integrations, payload.integrations);
+    if (payload.details) {
+      state.integrationDetails = {
+        ...state.integrationDetails,
+        ...payload.details
+      };
+    }
+    if (payload.setup) {
+      state.integrationSetup = {
+        ...state.integrationSetup,
+        ...payload.setup
+      };
+    }
     if (payload.details?.shopify?.shop) state.integrationSettings.shopifyStoreDomain = payload.details.shopify.shop;
-    if (payload.details?.meta?.adAccountId) state.integrationSettings.metaAdAccountId = payload.details.meta.adAccountId;
+    if (payload.details?.meta?.adAccountId) state.integrationSettings.metaAdAccountId = cleanMetaAdAccountInput(payload.details.meta.adAccountId);
     if (payload.details?.tiktok?.advertiserId) state.integrationSettings.tiktokAdvertiserId = payload.details.tiktok.advertiserId;
     saveState();
     render();
@@ -1098,6 +1128,17 @@ function connectIntegration(provider) {
     saveState();
   }
 
+  const setup = state.integrationSetup?.[provider] || {};
+  if (setup.oauthReady === false) {
+    const missing = Array.isArray(setup.missing) && setup.missing.length ? ` Missing: ${setup.missing.join(", ")}.` : "";
+    const message = `${setup.message || `${providerLabel(provider)} needs app setup before sign in can start.`}${missing}`;
+    showToast("Integration setup needed");
+    addBirdMessage("bird", message);
+    saveState();
+    if (route === "bird") render();
+    return;
+  }
+
   const params = new URLSearchParams();
   if (provider === "shopify") {
     const shop = state.integrationSettings.shopifyStoreDomain;
@@ -1109,7 +1150,14 @@ function connectIntegration(provider) {
     params.set("shop", shop);
   }
   if (provider === "meta" && state.integrationSettings.metaAdAccountId) {
-    params.set("adAccountId", state.integrationSettings.metaAdAccountId);
+    const adAccountId = cleanMetaAdAccountInput(state.integrationSettings.metaAdAccountId);
+    if (!isValidMetaAdAccountInput(adAccountId)) {
+      showToast("Enter a numeric Meta ad account ID");
+      form?.elements.metaAdAccountId?.focus();
+      return;
+    }
+    state.integrationSettings.metaAdAccountId = adAccountId;
+    params.set("adAccountId", adAccountId);
   }
   if (provider === "tiktok" && state.integrationSettings.tiktokAdvertiserId) {
     params.set("advertiserId", state.integrationSettings.tiktokAdvertiserId);
@@ -1122,7 +1170,10 @@ function connectIntegration(provider) {
 function captureSettingsForm(form) {
   state.api.baseUrl = clean(form.elements.apiBaseUrl?.value);
   state.integrationSettings.shopifyStoreDomain = clean(form.elements.shopifyStoreDomain?.value);
-  state.integrationSettings.metaAdAccountId = clean(form.elements.metaAdAccountId?.value);
+  state.integrationSettings.metaAdAccountId = cleanMetaAdAccountInput(form.elements.metaAdAccountId?.value);
+  if (form.elements.metaAdAccountId) {
+    form.elements.metaAdAccountId.value = state.integrationSettings.metaAdAccountId;
+  }
   state.integrationSettings.tiktokAdvertiserId = clean(form.elements.tiktokAdvertiserId?.value);
 }
 
@@ -1571,6 +1622,7 @@ function integrationCard(provider, name) {
   const status = state.integrations[name] || "Not configured";
   const isConnected = status === "Connected";
   const field = integrationField(provider);
+  const help = integrationHelp(provider, status);
   return `
     <article class="integration-card">
       <div class="integration-head">
@@ -1580,6 +1632,7 @@ function integrationCard(provider, name) {
         </div>
         <span class="tag ${integrationStatusClass(status)}">${escapeHTML(status)}</span>
       </div>
+      ${help ? `<p class="integration-help">${escapeHTML(help)}</p>` : ""}
       <div class="integration-actions">
         <button class="button" type="button" data-action="connect-integration" data-provider="${provider}">${isConnected ? "Reconnect" : "Connect"}</button>
         <button class="button secondary" type="button" data-action="sync-modal-source" data-provider="${provider}">Sync</button>
@@ -1594,9 +1647,31 @@ function integrationField(provider) {
     return `<label class="form-field compact"><span>Store Domain</span><input name="shopifyStoreDomain" type="text" placeholder="your-store.myshopify.com" value="${escapeHTML(state.integrationSettings.shopifyStoreDomain)}"></label>`;
   }
   if (provider === "meta") {
-    return `<label class="form-field compact"><span>Ad Account ID</span><input name="metaAdAccountId" type="text" placeholder="act_1234567890" value="${escapeHTML(state.integrationSettings.metaAdAccountId)}"></label>`;
+    return `<label class="form-field compact"><span>Ad Account ID</span><input name="metaAdAccountId" type="text" inputmode="numeric" placeholder="123456789012345 or act_123456789012345" value="${escapeHTML(state.integrationSettings.metaAdAccountId)}"></label>`;
   }
   return `<label class="form-field compact"><span>Advertiser ID</span><input name="tiktokAdvertiserId" type="text" placeholder="1234567890" value="${escapeHTML(state.integrationSettings.tiktokAdvertiserId)}"></label>`;
+}
+
+function integrationHelp(provider, status) {
+  const setup = state.integrationSetup?.[provider] || {};
+  const details = state.integrationDetails?.[provider] || {};
+  if (status === "Connected") {
+    if (provider === "meta") {
+      const account = details.adAccountId ? `act_${details.adAccountId}` : state.integrationSettings.metaAdAccountId ? `act_${state.integrationSettings.metaAdAccountId}` : "";
+      return [account, details.adAccountName].filter(Boolean).join(" - ");
+    }
+    if (provider === "shopify" && details.shop) return details.shop;
+    if (provider === "tiktok" && details.advertiserId) return `Advertiser ${details.advertiserId}`;
+    return setup.message || "";
+  }
+  if (setup.oauthReady === false) {
+    const missing = Array.isArray(setup.missing) && setup.missing.length ? ` Missing ${setup.missing.join(", ")}.` : "";
+    return `${setup.message || `${providerLabel(provider)} needs app setup.`}${missing}`;
+  }
+  if (provider === "meta" && state.integrationSettings.metaAdAccountId) {
+    return `Sign in will request access to act_${state.integrationSettings.metaAdAccountId}.`;
+  }
+  return setup.message || "";
 }
 
 function integrationStatusClass(status) {
@@ -1712,6 +1787,17 @@ function toNumber(value, fallback) {
 
 function clean(value) {
   return String(value || "").trim();
+}
+
+function cleanMetaAdAccountInput(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^act_/i, "")
+    .replace(/[^\d]/g, "");
+}
+
+function isValidMetaAdAccountInput(value) {
+  return /^\d{5,}$/.test(cleanMetaAdAccountInput(value));
 }
 
 function escapeHTML(value) {

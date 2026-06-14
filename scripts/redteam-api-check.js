@@ -14,6 +14,7 @@ const server = spawn(process.execPath, ["server.js"], {
     PORT: port,
     PUBLIC_BASE_URL: `http://127.0.0.1:${port}`,
     APP_SLUG: "little-bird-redteam",
+    META_AD_ACCOUNT_ID: "(123456789012345)",
     LITTLE_BIRD_UPDATE_MANIFEST_URL: `http://127.0.0.1:${port}/missing-update.json`
   },
   stdio: ["ignore", "pipe", "pipe"]
@@ -52,6 +53,10 @@ async function run() {
     const health = await json("/api/health");
     record("health endpoint", health.response.status === 200 && health.body.ok === true, String(health.response.status));
     record("health reports app version", Boolean(health.body.app?.version), health.body.app?.version || "");
+
+    const integrations = await json("/api/integrations");
+    record("meta account id is normalized", integrations.body.details?.meta?.adAccountId === "123456789012345", integrations.body.details?.meta?.adAccountId || "");
+    record("integration setup reports missing meta app credentials", Array.isArray(integrations.body.setup?.meta?.missing) && integrations.body.setup.meta.missing.includes("META_APP_ID"), (integrations.body.setup?.meta?.missing || []).join(","));
 
     const update = await json("/api/update");
     record("update endpoint is local and safe", update.response.status === 200 && update.body.currentVersion, update.body.message || "");

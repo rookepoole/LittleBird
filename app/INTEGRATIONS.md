@@ -30,7 +30,7 @@ Shopify OAuth:
 Meta Ads OAuth:
 - `META_APP_ID`
 - `META_APP_SECRET`
-- `META_AD_ACCOUNT_ID`, optional but recommended, with or without `act_`
+- `META_AD_ACCOUNT_ID`, optional but recommended, with or without `act_`. Little Bird normalizes pasted values such as `(123456789012345)` to `123456789012345` and calls Meta as `act_123456789012345`.
 - `META_SCOPES`, default `ads_read,business_management`
 - `META_API_VERSION`, default `v23.0`
 
@@ -93,7 +93,7 @@ node server.js --port=4192
 ## Endpoints
 
 - `GET /api/health` reports configured integrations.
-- `GET /api/integrations` reports connection status.
+- `GET /api/integrations` reports connection status, OAuth setup readiness, missing app credentials, callback URLs, and locally selected account IDs.
 - `GET /api/update` checks the configured release feed.
 - `POST /api/sync` with `{ "source": "all" }` syncs every configured source.
 - `POST /api/sync` with `{ "source": "shopify" }` syncs Shopify only.

@@ -998,6 +998,12 @@ body[data-theme="dark"] .day-pill {
   line-height: 1.2;
 }
 
+.integration-help {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .integration-actions {
   display: grid;
   grid-template-columns: 1.1fr 1fr auto;
