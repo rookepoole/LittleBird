@@ -8,7 +8,7 @@ What the setup does:
 - Creates Desktop and Start Menu shortcuts.
 - Attempts to install Ollama with winget if Ollama is missing.
 - Pulls the default local model: qwen2.5:3b.
-- Starts Little Bird and opens http://127.0.0.1:4173/?v=0.2.0.
+- Starts Little Bird and opens http://127.0.0.1:4173/?v=0.2.1.
 - Supports connected-first store sync, catalog context for the local model, and manual metrics as an override.
 - Can check a configured release feed from Settings when LITTLE_BIRD_UPDATE_MANIFEST_URL is set.
 

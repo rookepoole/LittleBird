@@ -93,7 +93,7 @@ try {
   Start-Sleep -Seconds 2
 }
 
-Start-Process "http://127.0.0.1:$Port/?v=0.2.0"
+Start-Process "http://127.0.0.1:$Port/?v=0.2.1"
 '@
 
   $stopScript = @'

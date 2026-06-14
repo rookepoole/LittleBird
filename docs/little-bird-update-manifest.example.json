@@ -1,5 +1,5 @@
 {
-  "version": "0.2.0",
-  "downloadUrl": "https://github.com/YOUR_ACCOUNT/little-bird/releases/latest/download/LittleBirdSetup.exe",
-  "releaseNotes": "Connected-first store sync, richer product context for Little Bird, and local update checks."
+  "version": "0.2.1",
+  "downloadUrl": "https://github.com/rookepoole/LittleBird/releases/latest/download/LittleBirdSetup.exe",
+  "releaseNotes": "Connected-first store sync, richer product context for Little Bird, and GitHub release update checks."
 }

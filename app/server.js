@@ -5,7 +5,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 
 const ROOT = __dirname;
-const APP_VERSION = process.env.LITTLE_BIRD_VERSION || "0.2.0";
+const APP_VERSION = process.env.LITTLE_BIRD_VERSION || "0.2.1";
 const APP_SLUG = safeAppSlug(process.env.APP_SLUG || "little-bird");
 const TOKEN_PATH = path.join(ROOT, `.${APP_SLUG}-tokens.json`);
 const STATE_PATH = path.join(ROOT, `.${APP_SLUG}-oauth-state.json`);
@@ -29,7 +29,7 @@ const META_VERSION = process.env.META_API_VERSION || "v23.0";
 const TIKTOK_VERSION = process.env.TIKTOK_API_VERSION || "v1.3";
 const SHOPIFY_SCOPES = process.env.SHOPIFY_SCOPES || "read_orders,read_products,read_analytics";
 const META_SCOPES = process.env.META_SCOPES || "ads_read,business_management";
-const UPDATE_MANIFEST_URL = process.env.LITTLE_BIRD_UPDATE_MANIFEST_URL || "";
+const UPDATE_MANIFEST_URL = process.env.LITTLE_BIRD_UPDATE_MANIFEST_URL || "https://api.github.com/repos/rookepoole/LittleBird/releases/latest";
 const OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434").replace(/\/$/, "");
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "qwen2.5:3b";
 

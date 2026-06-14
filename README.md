@@ -19,7 +19,7 @@ cd app
 Open:
 
 ```text
-http://127.0.0.1:4192/?v=0.2.0
+http://127.0.0.1:4192/?v=0.2.1
 ```
 
 ## Build Installer
@@ -27,7 +27,7 @@ http://127.0.0.1:4192/?v=0.2.0
 On Windows with Node.js available:
 
 ```powershell
-.\scripts\build-windows-installer.ps1 -Version 0.2.0
+.\scripts\build-windows-installer.ps1 -Version 0.2.1
 ```
 
 Outputs are written to `dist/`:
