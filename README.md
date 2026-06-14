@@ -2,6 +2,14 @@
 
 Little Bird is a local-first companion app for small businesses. It combines connected store metrics, catalog context, content planning, experiments, and a private local AI assistant powered by Ollama.
 
+## Download
+
+The Windows installer is published under GitHub Releases instead of committed to `main`.
+
+[Download LittleBirdSetup.exe](https://github.com/rookepoole/LittleBird/releases/latest/download/LittleBirdSetup.exe)
+
+Latest release page: [v0.2.1](https://github.com/rookepoole/LittleBird/releases/tag/v0.2.1)
+
 ## What Is Included
 
 - `app/` contains the local web app and Node server.
