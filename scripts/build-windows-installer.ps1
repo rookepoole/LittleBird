@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.2.1"
+  [string]$Version = "0.3.0"
 )
 
 $ErrorActionPreference = "Stop"
@@ -7,14 +7,12 @@ $ProgressPreference = "SilentlyContinue"
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $AppSource = Join-Path $RepoRoot "app"
-$InstallerSource = Join-Path $RepoRoot "installer"
-$BuildRoot = Join-Path $RepoRoot "build\installer"
-$PayloadRoot = Join-Path $BuildRoot "payload"
-$PackageRoot = Join-Path $BuildRoot "package"
+$BuildRoot = Join-Path $RepoRoot "build"
+$PortableRoot = Join-Path $BuildRoot "portable"
 $DistRoot = Join-Path $RepoRoot "dist"
+$ElectronDist = Join-Path $RepoRoot "dist-electron"
 $SetupExe = Join-Path $DistRoot "LittleBirdSetup.exe"
 $PortableZip = Join-Path $DistRoot "little-bird-local-app.zip"
-$PayloadZip = Join-Path $PackageRoot "little-bird-payload.zip"
 
 function Reset-Directory($Path) {
   if (Test-Path $Path) {
@@ -38,85 +36,40 @@ function Compress-Directory($Source, $Destination) {
   [System.IO.Compression.ZipFile]::CreateFromDirectory($Source, $Destination, [System.IO.Compression.CompressionLevel]::Optimal, $false)
 }
 
-Reset-Directory $BuildRoot
-New-Item -ItemType Directory -Force -Path $PayloadRoot, $PackageRoot, $DistRoot | Out-Null
-
-$PayloadApp = Join-Path $PayloadRoot "app"
-$PayloadRuntime = Join-Path $PayloadRoot "runtime"
-Copy-App $PayloadApp
-New-Item -ItemType Directory -Force -Path $PayloadRuntime | Out-Null
-
-$NodeCommand = Get-Command node -ErrorAction Stop
-Copy-Item -LiteralPath $NodeCommand.Source -Destination (Join-Path $PayloadRuntime "node.exe") -Force
-
-$InstallerScript = Get-Content (Join-Path $InstallerSource "install-little-bird.ps1") -Raw
-$InstallerScript = $InstallerScript -replace "\?v=[0-9.]+", "?v=$Version"
-Set-Content -Path (Join-Path $PackageRoot "install-little-bird.ps1") -Value $InstallerScript -Encoding UTF8
-Copy-Item -LiteralPath (Join-Path $InstallerSource "install-little-bird.cmd") -Destination $PackageRoot -Force
-
-Compress-Directory $PayloadRoot $PayloadZip
-Copy-App (Join-Path $BuildRoot "portable")
-Compress-Directory (Join-Path $BuildRoot "portable") $PortableZip
-
-$SedPath = Join-Path $BuildRoot "LittleBirdSetup.sed"
-$SedContent = @"
-[Version]
-Class=IEXPRESS
-SEDVersion=3
-
-[Options]
-PackagePurpose=InstallApp
-ShowInstallProgramWindow=1
-HideExtractAnimation=0
-UseLongFileName=1
-InsideCompressed=0
-CAB_FixedSize=0
-CAB_ResvCodeSigning=0
-RebootMode=N
-InstallPrompt=%InstallPrompt%
-DisplayLicense=%DisplayLicense%
-FinishMessage=%FinishMessage%
-TargetName=%TargetName%
-FriendlyName=%FriendlyName%
-AppLaunched=%AppLaunched%
-PostInstallCmd=%PostInstallCmd%
-AdminQuietInstCmd=%AdminQuietInstCmd%
-UserQuietInstCmd=%UserQuietInstCmd%
-SourceFiles=SourceFiles
-
-[SourceFiles]
-SourceFiles0=$PackageRoot\
-
-[SourceFiles0]
-%FILE0%=
-%FILE1%=
-%FILE2%=
-
-[Strings]
-InstallPrompt=This will install Little Bird locally, set up the local server runtime, and attempt to install Ollama plus the qwen2.5:3b model.
-DisplayLicense=
-FinishMessage=Little Bird setup has finished.
-TargetName=$SetupExe
-FriendlyName=Little Bird Setup
-AppLaunched=install-little-bird.cmd
-PostInstallCmd=<None>
-AdminQuietInstCmd=install-little-bird.cmd
-UserQuietInstCmd=install-little-bird.cmd
-FILE0=install-little-bird.cmd
-FILE1=install-little-bird.ps1
-FILE2=little-bird-payload.zip
-"@
-
-Set-Content -Path $SedPath -Value $SedContent -Encoding ASCII
-$IExpress = Join-Path $env:SystemRoot "System32\iexpress.exe"
-if (-not (Test-Path $IExpress)) {
-  throw "IExpress was not found at $IExpress. Build this installer on Windows."
+if (-not (Test-Path (Join-Path $RepoRoot "node_modules"))) {
+  Push-Location $RepoRoot
+  try {
+    if (Test-Path (Join-Path $RepoRoot "package-lock.json")) {
+      npm ci
+    } else {
+      npm install
+    }
+  } finally {
+    Pop-Location
+  }
 }
 
-$Process = Start-Process -FilePath $IExpress -ArgumentList @("/N", "/Q", $SedPath) -Wait -PassThru -WindowStyle Hidden
-if ($Process.ExitCode -ne 0) {
-  throw "IExpress failed with exit code $($Process.ExitCode)."
+Reset-Directory $DistRoot
+if (Test-Path $ElectronDist) {
+  Remove-Item -LiteralPath $ElectronDist -Recurse -Force
 }
 
-Write-Host "Built $SetupExe"
-Write-Host "Built $PortableZip"
+Copy-App $PortableRoot
+Compress-Directory $PortableRoot $PortableZip
+
+Push-Location $RepoRoot
+try {
+  npm run dist:win -- --config.extraMetadata.version=$Version
+} finally {
+  Pop-Location
+}
+
+$BuiltInstaller = Get-ChildItem -LiteralPath $ElectronDist -Filter "LittleBirdSetup.exe" -Recurse | Select-Object -First 1
+if (-not $BuiltInstaller) {
+  throw "Electron Builder did not produce LittleBirdSetup.exe."
+}
+
+Copy-Item -LiteralPath $BuiltInstaller.FullName -Destination $SetupExe -Force
+
+Write-Host "Built desktop installer: $SetupExe"
+Write-Host "Built portable app zip: $PortableZip"

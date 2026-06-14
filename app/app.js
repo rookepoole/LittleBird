@@ -1,5 +1,6 @@
 const STORAGE_KEY = "local-companion-state-v1";
-const APP_VERSION = "0.2.1";
+const APP_VERSION = "0.3.0";
+const RELEASE_API_URL = "https://api.github.com/repos/rookepoole/LittleBird/releases/latest";
 
 const defaultState = {
   profile: {
@@ -907,15 +908,16 @@ async function refreshUpdateStatus(showResult = false) {
   try {
     const response = await fetch(`${getApiBase()}/api/update`);
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok && !payload.message) throw new Error(`Server returned ${response.status}`);
+    const updatePayload = response.status === 404 ? await fetchReleaseUpdateFallback() : payload;
+    if (!response.ok && response.status !== 404 && !payload.message) throw new Error(`Server returned ${response.status}`);
     state.updates = {
       ...state.updates,
-      currentVersion: payload.currentVersion || APP_VERSION,
-      latestVersion: payload.latestVersion || state.updates.latestVersion || APP_VERSION,
-      available: Boolean(payload.updateAvailable),
-      downloadUrl: payload.downloadUrl || "",
-      releaseNotes: payload.releaseNotes || "",
-      message: payload.message || "Update status unavailable.",
+      currentVersion: updatePayload.currentVersion || APP_VERSION,
+      latestVersion: updatePayload.latestVersion || state.updates.latestVersion || APP_VERSION,
+      available: Boolean(updatePayload.updateAvailable),
+      downloadUrl: updatePayload.downloadUrl || "",
+      releaseNotes: updatePayload.releaseNotes || "",
+      message: updatePayload.message || "Update status unavailable.",
       checkedAt: new Date().toISOString()
     };
     saveState();
@@ -925,13 +927,49 @@ async function refreshUpdateStatus(showResult = false) {
     state.updates = {
       ...state.updates,
       available: false,
-      message: `Update check needs the local server. ${error.message}`,
+      message: `Update check failed. ${error.message}`,
       checkedAt: new Date().toISOString()
     };
     saveState();
     if (modalRoot.querySelector("form[data-form='settings']")) modalRoot.innerHTML = renderModal("settings");
     if (showResult) showToast("Update check failed");
   }
+}
+
+async function fetchReleaseUpdateFallback() {
+  const response = await fetch(RELEASE_API_URL, { headers: { Accept: "application/json" } });
+  const manifest = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(`GitHub release feed returned ${response.status}`);
+  const asset = Array.isArray(manifest.assets)
+    ? manifest.assets.find((item) => String(item.name || "").toLowerCase().endsWith(".exe")) || manifest.assets[0]
+    : null;
+  const latestVersion = stripVersionPrefix(manifest.tag_name || manifest.version || APP_VERSION);
+  const updateAvailable = compareVersions(latestVersion, APP_VERSION) > 0;
+  return {
+    currentVersion: APP_VERSION,
+    latestVersion,
+    updateAvailable,
+    downloadUrl: asset?.browser_download_url || "",
+    releaseNotes: manifest.body || "",
+    message: updateAvailable
+      ? "A newer Little Bird installer is available."
+      : "Little Bird is up to date. The local server update endpoint was missing, so GitHub Releases was checked directly."
+  };
+}
+
+function stripVersionPrefix(value) {
+  return String(value || "").trim().replace(/^v/i, "");
+}
+
+function compareVersions(a, b) {
+  const left = stripVersionPrefix(a).split(/[.-]/).map((part) => Number.parseInt(part, 10) || 0);
+  const right = stripVersionPrefix(b).split(/[.-]/).map((part) => Number.parseInt(part, 10) || 0);
+  const length = Math.max(left.length, right.length);
+  for (let index = 0; index < length; index += 1) {
+    const diff = (left[index] || 0) - (right[index] || 0);
+    if (diff) return diff;
+  }
+  return 0;
 }
 
 function openUpdateDownload() {

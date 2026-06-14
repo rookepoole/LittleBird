@@ -5,10 +5,12 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 
 const ROOT = __dirname;
-const APP_VERSION = process.env.LITTLE_BIRD_VERSION || "0.2.1";
+const DATA_ROOT = process.env.LITTLE_BIRD_DATA_DIR ? path.resolve(process.env.LITTLE_BIRD_DATA_DIR) : ROOT;
+fsSync.mkdirSync(DATA_ROOT, { recursive: true });
+const APP_VERSION = process.env.LITTLE_BIRD_VERSION || "0.3.0";
 const APP_SLUG = safeAppSlug(process.env.APP_SLUG || "little-bird");
-const TOKEN_PATH = path.join(ROOT, `.${APP_SLUG}-tokens.json`);
-const STATE_PATH = path.join(ROOT, `.${APP_SLUG}-oauth-state.json`);
+const TOKEN_PATH = path.join(DATA_ROOT, `.${APP_SLUG}-tokens.json`);
+const STATE_PATH = path.join(DATA_ROOT, `.${APP_SLUG}-oauth-state.json`);
 const MAX_JSON_BODY_BYTES = 32_000;
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
@@ -181,7 +183,7 @@ function setSecurityHeaders(res) {
   res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   res.setHeader(
     "Content-Security-Policy",
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' http://127.0.0.1:* http://localhost:*; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' http://127.0.0.1:* http://localhost:* https://api.github.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
   );
 }
 

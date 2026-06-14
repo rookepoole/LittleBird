@@ -1,0 +1,56 @@
+{
+  "name": "little-bird",
+  "version": "0.3.0",
+  "description": "Local-first small-business companion app with store metrics and local AI.",
+  "main": "electron/main.js",
+  "license": "MIT",
+  "private": false,
+  "scripts": {
+    "desktop": "electron .",
+    "test:api": "node scripts/redteam-api-check.js",
+    "dist:win": "electron-builder --win nsis --x64"
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.rookepoole.littlebird",
+    "productName": "Little Bird",
+    "artifactName": "LittleBirdSetup.exe",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "app",
+        "to": "little-bird-app",
+        "filter": [
+          "**/*",
+          "!**/.env",
+          "!**/.little-bird-tokens.json",
+          "!**/.little-bird-oauth-state.json"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "publisherName": "Rooke Poole"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Little Bird",
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}

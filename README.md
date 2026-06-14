@@ -1,41 +1,37 @@
 # Little Bird
 
-Little Bird is a local-first companion app for small businesses. It combines connected store metrics, catalog context, content planning, experiments, and a private local AI assistant powered by Ollama.
+Little Bird is a local-first desktop companion app for small businesses. It combines connected store metrics, catalog context, content planning, experiments, and a private local AI assistant powered by Ollama.
 
 ## Download
 
-The Windows installer is published under GitHub Releases instead of committed to `main`.
+The Windows desktop installer is published under GitHub Releases instead of committed to `main`.
 
 [Download LittleBirdSetup.exe](https://github.com/rookepoole/LittleBird/releases/latest/download/LittleBirdSetup.exe)
 
-Latest release page: [v0.2.1](https://github.com/rookepoole/LittleBird/releases/tag/v0.2.1)
+Latest release page: [v0.3.0](https://github.com/rookepoole/LittleBird/releases/tag/v0.3.0)
 
 ## What Is Included
 
-- `app/` contains the local web app and Node server.
-- `installer/` contains the Windows setup scripts.
-- `scripts/build-windows-installer.ps1` builds the portable zip and Windows setup EXE.
+- `app/` contains the local app UI and Node server.
+- `electron/` contains the desktop shell that opens Little Bird in its own app window.
+- `scripts/build-windows-installer.ps1` builds the portable zip and Windows desktop installer.
 - `.github/workflows/release.yml` can build release artifacts and attach them to GitHub Releases.
 
 ## Run Locally
 
 ```powershell
-cd app
-.\start-little-bird.cmd --port=4192
+npm install
+npm run desktop
 ```
 
-Open:
-
-```text
-http://127.0.0.1:4192/?v=0.2.1
-```
+The desktop shell starts the local server and opens a Little Bird window automatically.
 
 ## Build Installer
 
 On Windows with Node.js available:
 
 ```powershell
-.\scripts\build-windows-installer.ps1 -Version 0.2.1
+.\scripts\build-windows-installer.ps1 -Version 0.3.0
 ```
 
 Outputs are written to `dist/`:
@@ -51,8 +47,10 @@ The app can check a release feed from Settings. For GitHub Releases, set this in
 LITTLE_BIRD_UPDATE_MANIFEST_URL=https://api.github.com/repos/rookepoole/LittleBird/releases/latest
 ```
 
-Tag a release such as `v0.2.0` and the GitHub Actions workflow can publish the installer asset. Little Bird never silently installs updates; it only checks the feed and opens the installer download when the user chooses it.
+Tag a release such as `v0.3.0` and the GitHub Actions workflow can publish the installer asset. Little Bird never silently installs updates; it only checks the feed and opens the installer download when the user chooses it.
 
 ## Privacy
 
 Little Bird stores integration tokens only on the user's local machine in ignored dotfiles. Do not commit `.env`, `.little-bird-tokens.json`, or `.little-bird-oauth-state.json`.
+
+Windows may warn about unsigned installers until Little Bird is code-signed and has download reputation. See [SECURITY.md](SECURITY.md).

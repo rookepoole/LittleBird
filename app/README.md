@@ -1,10 +1,10 @@
 # Little Bird
 
-Little Bird is a private local app for small-business goals, connected store metrics, content planning, experiments, integrations, and local AI help.
+Little Bird is a private local app for small-business goals, connected store metrics, content planning, experiments, integrations, and local AI help. End users should install the desktop build from GitHub Releases; this folder remains useful for development and portable diagnostics.
 
 ## Run Locally
 
-For end users, prefer `LittleBirdSetup.exe`. It installs Little Bird, creates shortcuts, sets up the local server runtime, and attempts to install Ollama plus the default local model.
+For end users, prefer `LittleBirdSetup.exe`. It installs Little Bird as a desktop app, creates shortcuts, and starts the local server behind the app window.
 
 Windows:
 
@@ -15,7 +15,7 @@ start-little-bird.cmd
 Then open:
 
 ```text
-http://127.0.0.1:4173/?v=0.2.1
+http://127.0.0.1:4173/?v=0.3.0
 ```
 
 If that port is busy:
@@ -27,7 +27,7 @@ start-little-bird.cmd --port=4192
 and open:
 
 ```text
-http://127.0.0.1:4192/?v=0.2.1
+http://127.0.0.1:4192/?v=0.3.0
 ```
 
 ## Requirements
@@ -42,7 +42,7 @@ http://127.0.0.1:4192/?v=0.2.1
 2. Set the app name, business name, business type, and primary product or offer.
 3. Connect Shopify, Meta Ads, or TikTok Shop, then use Store Sync. Manual metrics are only an override for demos, offline work, or a broken source.
 4. Add OAuth app credentials in `.env` when real customer logins are needed.
-5. Use the browser's install option to pin Little Bird as an app if your browser supports installable web apps.
+5. For distribution, use the desktop installer instead of asking users to open the browser manually.
 
 ## Store Intelligence
 

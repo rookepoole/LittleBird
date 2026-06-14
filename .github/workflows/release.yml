@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Version to build, for example 0.2.1
+        description: Version to build, for example 0.3.0
         required: true
-        default: 0.2.1
+        default: 0.3.0
   push:
     tags:
       - "v*"
@@ -38,6 +38,14 @@ jobs:
             "value=$($refName.TrimStart('v'))" >> $env:GITHUB_OUTPUT
           }
 
+      - name: Install dependencies
+        shell: pwsh
+        run: npm install
+
+      - name: Red-team local API
+        shell: pwsh
+        run: npm run test:api
+
       - name: Build Windows installer
         shell: pwsh
         run: ./scripts/build-windows-installer.ps1 -Version "${{ steps.version.outputs.value }}"
@@ -59,7 +67,7 @@ jobs:
           $tag = "${env:GITHUB_REF_NAME}"
           gh release view $tag *> $null
           if ($LASTEXITCODE -ne 0) {
-            gh release create $tag dist/LittleBirdSetup.exe dist/little-bird-local-app.zip --title "Little Bird $tag" --notes "Little Bird Windows installer and portable local app build."
+            gh release create $tag dist/LittleBirdSetup.exe dist/little-bird-local-app.zip --title "Little Bird $tag" --notes "Little Bird Windows desktop installer and portable local app build."
           } else {
             gh release upload $tag dist/LittleBirdSetup.exe dist/little-bird-local-app.zip --clobber
           }

@@ -1,6 +1,6 @@
 # Little Bird Integrations
 
-Run Little Bird through `server.js` when you want live API sync. The browser-only `index.html` still works for manual tracking, but Shopify, Meta, and TikTok logins need the local server so OAuth secrets and access tokens stay out of the browser.
+Run Little Bird through the desktop app or `server.js` when you want live API sync. The browser-only `index.html` still works for diagnostics, but Shopify, Meta, and TikTok logins need the local server so OAuth secrets and access tokens stay out of the browser.
 
 ## Environment Variables
 
@@ -110,7 +110,7 @@ After a successful login, the local server writes access tokens to `.little-bird
 
 ## Security Notes
 
-- Open `http://127.0.0.1:4173/` for live integrations and Little Bird AI. The browser-only file URL remains useful for manual tracking, but local-token operations are protected by local-origin checks.
+- Open the desktop app for live integrations and Little Bird AI. The browser-only file URL remains useful for diagnostics, but local-token operations are protected by local-origin checks.
 - `.env`, `.little-bird-tokens.json`, `.little-bird-oauth-state.json`, and other dotfiles are blocked from static serving.
 - OAuth state expires after 10 minutes.
 - Sync and disconnect are POST-only so other sites cannot trigger token-backed actions with simple GET requests.
