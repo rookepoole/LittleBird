@@ -1,6 +1,6 @@
 {
   "name": "little-bird",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Local-first small-business companion app with store metrics and local AI.",
   "main": "electron/main.js",
   "license": "MIT",
@@ -47,7 +47,7 @@
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
+      "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
       "shortcutName": "Little Bird",
       "deleteAppDataOnUninstall": false
