@@ -68,6 +68,7 @@ button {
   display: flex;
   flex-direction: column;
   width: min(100%, 480px);
+  height: 100svh;
   min-height: 100svh;
   margin: 0 auto;
   background: var(--bg);
@@ -161,6 +162,7 @@ h3 {
 
 .screen {
   flex: 1;
+  min-height: 0;
   padding: 20px var(--page-pad) 116px;
   overflow-y: auto;
   animation: screenIn 200ms var(--ease-out);
@@ -823,9 +825,11 @@ body[data-theme="dark"] .day-pill {
 }
 
 .bottom-nav {
-  position: sticky;
-  z-index: 10;
+  position: fixed;
+  z-index: 20;
+  left: 50%;
   bottom: 0;
+  width: min(100%, 480px);
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 4px;
@@ -834,6 +838,7 @@ body[data-theme="dark"] .day-pill {
   background: color-mix(in srgb, var(--card) 94%, transparent);
   backdrop-filter: blur(18px);
   border-top: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  transform: translateX(-50%);
 }
 
 .nav-item {
@@ -1118,6 +1123,7 @@ body[data-theme="dark"] .day-pill {
     grid-template-rows: auto minmax(0, 1fr);
     width: 100%;
     max-width: none;
+    height: auto;
     min-height: 100svh;
     border-inline: 0;
     overflow: visible;
@@ -1159,6 +1165,7 @@ body[data-theme="dark"] .day-pill {
 
   .bottom-nav {
     position: sticky;
+    left: auto;
     top: 0;
     bottom: auto;
     grid-column: 1;
@@ -1166,11 +1173,12 @@ body[data-theme="dark"] .day-pill {
     grid-template-columns: 1fr;
     grid-auto-rows: min-content;
     align-self: start;
-    width: 104px;
     min-height: 100svh;
     padding: 24px 10px;
     border-top: 0;
     border-right: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+    transform: none;
+    width: 104px;
   }
 
   .nav-item {

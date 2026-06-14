@@ -1,5 +1,5 @@
 const STORAGE_KEY = "local-companion-state-v1";
-const APP_VERSION = "0.3.8";
+const APP_VERSION = "0.3.9";
 const RELEASE_API_URL = "https://api.github.com/repos/rookepoole/LittleBird/releases/latest";
 
 const defaultState = {
@@ -320,8 +320,10 @@ function wireGlobalEvents() {
 }
 
 function setRoute(nextRoute) {
+  if (!titles[nextRoute]) return;
   route = nextRoute;
   render();
+  screen.scrollTop = 0;
 }
 
 function render() {
