@@ -4,7 +4,7 @@ const net = require("node:net");
 const path = require("node:path");
 
 const DEFAULT_PORT = Number(process.env.PORT || 4173);
-const APP_VERSION = "0.3.13";
+const APP_VERSION = "0.3.14";
 const APP_ID = "com.rookepoole.littlebird";
 
 app.disableHardwareAcceleration();

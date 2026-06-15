@@ -1,5 +1,5 @@
 const STORAGE_KEY = "local-companion-state-v1";
-const APP_VERSION = "0.3.13";
+const APP_VERSION = "0.3.14";
 const RELEASE_API_URL = "https://api.github.com/repos/rookepoole/LittleBird/releases/latest";
 
 const defaultState = {
@@ -39,7 +39,7 @@ const defaultState = {
     checkedAt: "",
     installing: false
   },
-  dataMode: "connected",
+  dataMode: "sample",
   lastSync: "Connect to sync",
   store: {
     lastUpdated: "",
@@ -183,6 +183,32 @@ const defaultState = {
   }
 };
 
+const VALID_DATA_MODES = new Set(["sample", "live", "manual"]);
+const LIVE_METRIC_BASE = {
+  revenueToday: 0,
+  visitorsToday: 0,
+  orders24h: 0,
+  conversionRate: 0,
+  metaSpend: 0,
+  tiktokSpend: 0,
+  roas: 0,
+  profit: 0,
+  tiktokFollowers: 0,
+  instagramFollowers: 0,
+  followsGained: 0,
+  postsUploaded: 0,
+  adSets: 0,
+  productsAdded: 0,
+  bestProduct: "",
+  trafficSource: "",
+  visitors7d: 0,
+  visitors30d: 0,
+  sales7d: 0,
+  sales30d: 0,
+  ctr: 0,
+  tiktokViews: 0
+};
+
 let state = normalizeState(loadState());
 let route = "home";
 let toastTimer;
@@ -244,7 +270,8 @@ function normalizeState(nextState) {
   nextState.api = nextState.api || { baseUrl: "" };
   nextState.ai = { ...defaultState.ai, ...(nextState.ai || {}) };
   nextState.updates = { ...defaultState.updates, ...(nextState.updates || {}), currentVersion: APP_VERSION };
-  nextState.dataMode = nextState.dataMode || defaultState.dataMode;
+  if (!VALID_DATA_MODES.has(nextState.dataMode)) nextState.dataMode = defaultState.dataMode;
+  if (!nextState.lastSync) nextState.lastSync = defaultState.lastSync;
   if (nextState.lastSync === "Manual MVP") nextState.lastSync = defaultState.lastSync;
   nextState.store = mergeDeep(structuredCloneSafe(defaultState.store), nextState.store || {});
   nextState.integrationSettings = nextState.integrationSettings || {};
@@ -384,12 +411,34 @@ function render() {
   });
 }
 
+function metricModeTag() {
+  if (state.dataMode === "live") return { label: "Live", className: "green" };
+  if (state.dataMode === "manual") return { label: "Manual", className: "blue" };
+  return { label: "Sample", className: "" };
+}
+
+function metricSourceLine(connectedSources) {
+  if (state.dataMode === "live") {
+    return connectedSources
+      ? `${connectedSources} live source${connectedSources === 1 ? "" : "s"} synced`
+      : "Live metrics synced";
+  }
+  if (state.dataMode === "manual") return "Manual fallback values";
+  return connectedSources ? "Connected. Sync to load live metrics" : "Sample metrics until a source syncs";
+}
+
+function displayMetricText(value, fallback = "Not synced") {
+  const text = clean(value);
+  return escapeHTML(text || fallback);
+}
+
 function renderHome() {
   const completedToday = state.tasks.filter((task) => task.completed).length;
   const totalToday = state.tasks.length;
   const topGoals = state.goals.slice(0, 2).map(renderProjectCard).join("");
   const todayTasks = state.tasks.slice(0, 4).map(renderTaskRow).join("");
   const businessName = state.business?.businessName || defaultState.business.businessName;
+  const modeTag = metricModeTag();
 
   return `
     <section class="hero-panel">
@@ -407,7 +456,7 @@ function renderHome() {
     <section class="section">
       <div class="section-header">
         <h2>Daily Dashboard</h2>
-        <span class="tag blue">${escapeHTML(state.lastSync)}</span>
+        <span class="tag ${modeTag.className}">${escapeHTML(modeTag.label)}</span>
       </div>
       <div class="kpi-grid">
         ${renderKpi("Revenue", money(state.metrics.revenueToday), "icon-dollar")}
@@ -473,6 +522,8 @@ function renderMetrics() {
   const newProducts = state.store?.catalog?.newProducts || [];
   const topProducts = state.store?.catalog?.topProducts || [];
   const connectedSources = Object.values(state.integrations || {}).filter((status) => status === "Connected").length;
+  const sourceLine = metricSourceLine(connectedSources);
+  const modeTag = metricModeTag();
   const bars = state.revenueTrend.map((value, index, arr) => {
     const max = Math.max(...arr, 1);
     const height = Math.max(18, Math.round((value / max) * 100));
@@ -485,9 +536,9 @@ function renderMetrics() {
       <div class="section-header">
         <div>
           <h2>Live Store Metrics</h2>
-          <p class="date-line">${connectedSources ? `${connectedSources} connected source${connectedSources === 1 ? "" : "s"}` : "Connect a store to replace sample metrics"}</p>
+          <p class="date-line">${escapeHTML(sourceLine)}</p>
         </div>
-        <button class="small-action" type="button" data-action="open-modal" data-kind="metric"><svg><use href="#icon-pen"></use></svg>Override</button>
+        <button class="small-action" type="button" data-action="open-modal" data-kind="metric"><svg><use href="#icon-pen"></use></svg>Manual</button>
       </div>
       <div class="metric-list">
         ${renderMetricCard("Website Visitors", number(state.metrics.visitorsToday), "Today", "icon-users")}
@@ -499,15 +550,15 @@ function renderMetrics() {
     <section class="section">
       <div class="section-header">
         <h2>Revenue Trend</h2>
-        <span class="tag green">7 day</span>
+        <span class="tag ${modeTag.className}">${escapeHTML(modeTag.label)}</span>
       </div>
       <div class="bar-chart">${bars}</div>
     </section>
 
     <section class="section">
       <div class="card stack">
-        <div class="row-between"><span class="tiny-label">Best Product</span><strong>${escapeHTML(state.metrics.bestProduct)}</strong></div>
-        <div class="row-between"><span class="tiny-label">Top Traffic Source</span><strong>${escapeHTML(state.metrics.trafficSource)}</strong></div>
+        <div class="row-between"><span class="tiny-label">Best Product</span><strong>${displayMetricText(state.metrics.bestProduct)}</strong></div>
+        <div class="row-between"><span class="tiny-label">Top Traffic Source</span><strong>${displayMetricText(state.metrics.trafficSource)}</strong></div>
         <div class="row-between"><span class="tiny-label">TikTok Followers</span><strong>${number(state.metrics.tiktokFollowers)}</strong></div>
         <div class="row-between"><span class="tiny-label">Instagram Followers</span><strong>${number(state.metrics.instagramFollowers)}</strong></div>
       </div>
@@ -535,7 +586,7 @@ function renderMetrics() {
       </div>
       <div class="card stack">
         <div class="row-between"><span class="tiny-label">New or Changed</span><strong>${newProducts.length ? escapeHTML(newProducts.slice(0, 2).map((item) => item.title).join(", ")) : "None synced"}</strong></div>
-        <div class="row-between"><span class="tiny-label">Top Products</span><strong>${topProducts.length ? escapeHTML(topProducts.slice(0, 2).map((item) => item.title).join(", ")) : escapeHTML(state.metrics.bestProduct)}</strong></div>
+        <div class="row-between"><span class="tiny-label">Top Products</span><strong>${topProducts.length ? escapeHTML(topProducts.slice(0, 2).map((item) => item.title).join(", ")) : displayMetricText(state.metrics.bestProduct)}</strong></div>
         <div class="row-between"><span class="tiny-label">Recent Catalog</span><strong>${recentProducts.length ? escapeHTML(recentProducts.slice(0, 2).map((item) => item.title).join(", ")) : "Waiting for sync"}</strong></div>
       </div>
     </section>
@@ -840,7 +891,8 @@ async function syncMetrics(source = "all") {
     applyIntegrationPayload(payload);
     saveState();
     render();
-    showToast(payload.warnings?.length ? "Synced with notes" : "Metrics synced");
+    const liveMetricCount = Object.keys(payload.metrics || {}).length;
+    showToast(payload.warnings?.length ? (liveMetricCount ? "Synced with notes" : "Sync needs attention") : "Metrics synced");
   } catch (error) {
     showToast("Integration server offline");
     addBirdMessage("bird", `Live sync needs the local integration server. ${error.message}`);
@@ -867,12 +919,25 @@ async function fetchIntegrationSync(source) {
 }
 
 function applyIntegrationPayload(payload) {
-  if (payload.metrics) {
-    Object.assign(state.metrics, payload.metrics);
-    state.revenueTrend[state.revenueTrend.length - 1] = state.metrics.revenueToday;
+  const hasMetrics = payload.metrics && Object.keys(payload.metrics).length > 0;
+  const resetFromSample = state.dataMode !== "live";
+  if (hasMetrics) {
+    const baseMetrics = resetFromSample
+      ? liveMetricBaseline()
+      : { ...liveMetricBaseline(), ...state.metrics };
+    state.metrics = { ...baseMetrics, ...payload.metrics };
+    if (resetFromSample) {
+      state.revenueTrend = [0, 0, 0, 0, 0, 0, state.metrics.revenueToday];
+    } else {
+      if (!Array.isArray(state.revenueTrend) || !state.revenueTrend.length) {
+        state.revenueTrend = [0, 0, 0, 0, 0, 0, 0];
+      }
+      state.revenueTrend[state.revenueTrend.length - 1] = state.metrics.revenueToday;
+    }
+    state.dataMode = "live";
   }
   if (payload.store) {
-    state.store = mergeDeep(structuredCloneSafe(state.store || defaultState.store), payload.store);
+    state.store = mergeDeep(structuredCloneSafe(state.store || defaultState.store), storePayloadForMerge(payload.store));
     const bestProduct = state.store.catalog?.topProducts?.[0]?.title || state.store.catalog?.recentProducts?.[0]?.title;
     if (bestProduct) state.metrics.bestProduct = bestProduct;
   }
@@ -880,12 +945,29 @@ function applyIntegrationPayload(payload) {
     Object.assign(state.integrations, payload.integrations);
   }
   applyIntegrationStatusPayload(payload);
-  state.lastSync = payload.lastSync ? `Synced ${formatTime(payload.lastSync)}` : "Synced now";
+  state.lastSync = hasMetrics || !payload.warnings?.length
+    ? (payload.lastSync ? `Synced ${formatTime(payload.lastSync)}` : "Synced now")
+    : "Sync needs attention";
   if (payload.warnings?.length) {
     addBirdMessage("bird", `Sync note: ${payload.warnings.join(" ")}`);
   } else {
     addBirdMessage("bird", "Live metrics refreshed. Review the dashboard before changing budget or content rhythm.");
   }
+}
+
+function liveMetricBaseline() {
+  return structuredCloneSafe(LIVE_METRIC_BASE);
+}
+
+function storePayloadForMerge(store) {
+  const nextStore = structuredCloneSafe(store);
+  if (!nextStore.primarySource) delete nextStore.primarySource;
+  for (const key of ["recentProducts", "newProducts", "topProducts"]) {
+    if (Array.isArray(nextStore.catalog?.[key]) && nextStore.catalog[key].length === 0) {
+      delete nextStore.catalog[key];
+    }
+  }
+  return nextStore;
 }
 
 function applyIntegrationStatusPayload(payload) {
@@ -919,10 +1001,12 @@ function handleOAuthReturn() {
   const connected = params.get("connected");
   const errorProvider = params.get("integrationError");
   const message = params.get("message");
+  let syncAfterConnect = "";
 
   if (connected) {
     showToast(`${providerLabel(connected)} connected`);
-    addBirdMessage("bird", `${providerLabel(connected)} is connected. You can sync live metrics now.`);
+    addBirdMessage("bird", `${providerLabel(connected)} is connected. Syncing live metrics now.`);
+    syncAfterConnect = connected;
     saveState();
   }
   if (errorProvider) {
@@ -932,6 +1016,9 @@ function handleOAuthReturn() {
   }
   if ((connected || errorProvider) && history.replaceState) {
     history.replaceState({}, "", location.pathname || "/");
+  }
+  if (syncAfterConnect) {
+    setTimeout(() => syncMetrics(syncAfterConnect), 0);
   }
 }
 
@@ -1299,6 +1386,7 @@ async function fetchBirdReply(message) {
       message,
       business: state.business,
       store: state.store,
+      dataMode: state.dataMode,
       metrics: state.metrics,
       goals: state.goals,
       tasks: state.tasks,
@@ -1514,7 +1602,7 @@ function modalHeader(title) {
 function metricModal() {
   const m = state.metrics;
   return `
-    ${modalHeader("Manual Override")}
+    ${modalHeader("Manual Metrics")}
     <form class="form-grid" data-form="metric">
       ${numberField("revenueToday", "Revenue Today", m.revenueToday)}
       ${numberField("visitorsToday", "Visitors Today", m.visitorsToday)}
@@ -1819,9 +1907,16 @@ function updateMetricData(data) {
   state.metrics.bestProduct = clean(data.get("bestProduct"));
   state.metrics.trafficSource = clean(data.get("trafficSource"));
   state.revenueTrend[state.revenueTrend.length - 1] = state.metrics.revenueToday;
+  state.dataMode = "manual";
+  state.lastSync = "Manual metrics";
 }
 
 function makeHomeInsight() {
+  if (state.dataMode === "sample") return "Connect and sync a source to replace sample metrics.";
+  if (state.dataMode === "manual") return "Manual metrics are saved as a fallback.";
+  if (state.dataMode === "live" && !state.metrics.revenueToday && !state.metrics.orders24h) {
+    return "Live sources are synced. Add store sales data for revenue context.";
+  }
   if (state.metrics.conversionRate < 2) return "Visitors need a stronger product path today.";
   if (state.metrics.roas >= 3) return "Ad performance is healthy. Test one creative before scaling.";
   return "Keep the dashboard tight: content, metrics, and one focused experiment.";
@@ -1832,6 +1927,12 @@ function makeBirdInsight() {
   const conversion = state.metrics.conversionRate;
   const newProduct = state.store?.catalog?.newProducts?.[0]?.title;
   const topProduct = state.store?.catalog?.topProducts?.[0]?.title;
+  if (state.dataMode === "sample") {
+    return "The dashboard is still using sample metrics. Connect and sync a source before using me for live recommendations.";
+  }
+  if (state.dataMode === "manual") {
+    return "Manual metrics are saved. Sync a connected source when you want me to use live store and ad signals.";
+  }
   if (newProduct) {
     return `${newProduct} is newly synced. Ask for a content plan and I can use the product title, tags, type, and current ad signals.`;
   }
