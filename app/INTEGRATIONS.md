@@ -70,6 +70,12 @@ If Ollama is not installed, not running, or the model has not been pulled, the a
 
 When Store Sync is available, Little Bird sends the local model a sanitized store snapshot: source status, store metadata, recent products, newly changed products, top products, order totals, and ad summaries. Access tokens, OAuth state, and raw customer records are not included in the model prompt.
 
+## Startup System Check
+
+The app opens with a local-first boot screen that checks the Little Bird server, localhost binding, security headers, update feed, Ollama, and saved integration readiness. You can rerun the same checks from Settings with **System Check**.
+
+The security row performs live localhost probes for the browser content policy, frame blocking, dotfile blocking, and foreign-origin write rejection. Ollama is checked through `OLLAMA_BASE_URL` and the configured model name.
+
 ## Start
 
 From this folder:
@@ -99,6 +105,7 @@ node server.js --port=4192
 ## Endpoints
 
 - `GET /api/health` reports configured integrations.
+- `GET /api/system/status` runs startup checks for local server status, localhost access, security probes, update channel, Ollama, and integration readiness.
 - `GET /api/integrations` reports connection status, OAuth setup readiness, missing app credentials, callback URLs, and locally selected account IDs.
 - `POST /api/integration-credentials` saves whitelisted OAuth app credentials locally. Responses report readiness but never echo app secrets.
 - `GET /api/update` checks the configured release feed.

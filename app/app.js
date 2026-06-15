@@ -29,6 +29,11 @@ const defaultState = {
     available: false,
     message: "Checking local LLM"
   },
+  system: {
+    summary: "Checking",
+    checkedAt: "",
+    checks: []
+  },
   updates: {
     currentVersion: APP_VERSION,
     latestVersion: APP_VERSION,
@@ -213,6 +218,7 @@ let state = normalizeState(loadState());
 let route = "home";
 let toastTimer;
 let birdDraft = "";
+let bootState = createBootState();
 
 const screen = document.querySelector("#screen");
 const viewTitle = document.querySelector("#viewTitle");
@@ -239,12 +245,9 @@ const fabKinds = {
 
 document.addEventListener("DOMContentLoaded", () => {
   applyTheme();
-  render();
   wireGlobalEvents();
-  handleOAuthReturn();
-  refreshIntegrationStatus();
-  refreshBirdStatus();
-  refreshUpdateStatus(false);
+  renderBootScreen();
+  runBootSequence();
   registerServiceWorker();
 });
 
@@ -269,6 +272,7 @@ function normalizeState(nextState) {
   nextState.business = { ...defaultState.business, ...(nextState.business || {}) };
   nextState.api = nextState.api || { baseUrl: "" };
   nextState.ai = { ...defaultState.ai, ...(nextState.ai || {}) };
+  nextState.system = { ...defaultState.system, ...(nextState.system || {}) };
   nextState.updates = { ...defaultState.updates, ...(nextState.updates || {}), currentVersion: APP_VERSION };
   if (!VALID_DATA_MODES.has(nextState.dataMode)) nextState.dataMode = defaultState.dataMode;
   if (!nextState.lastSync) nextState.lastSync = defaultState.lastSync;
@@ -350,6 +354,121 @@ function isDesktopShell() {
   return new URLSearchParams(location.search).get("desktop") === "1" || /\bElectron\b/i.test(navigator.userAgent);
 }
 
+function createBootState() {
+  return {
+    active: true,
+    startedAt: Date.now(),
+    message: "Starting Little Bird",
+    checks: [
+      bootCheck("server", "Local server", "pending", "Waiting for the local app server."),
+      bootCheck("origin", "Local access", "pending", "Checking localhost access."),
+      bootCheck("security", "Security headers", "pending", "Checking local browser protections."),
+      bootCheck("updates", "Update channel", "pending", "Checking trusted update source."),
+      bootCheck("ollama", "Ollama local LLM", "pending", "Checking Ollama on this PC."),
+      bootCheck("integrations", "Store connections", "pending", "Checking saved store connection status.")
+    ]
+  };
+}
+
+function bootCheck(id, label, status, message, detail = {}) {
+  return { id, label, status, message, detail };
+}
+
+function renderBootScreen() {
+  document.body.dataset.booting = "true";
+  document.body.dataset.route = "boot";
+  document.title = `${state.business?.appName || defaultState.business.appName} - Starting`;
+  wordmark.textContent = "BIRD";
+  viewTitle.textContent = "Starting";
+  document.querySelectorAll(".nav-item").forEach((item) => item.classList.remove("is-active"));
+  screen.innerHTML = `
+    <section class="boot-screen" aria-label="Little Bird startup checks">
+      <div class="boot-mark">
+        <img src="assets/bird-mark.svg" alt="">
+      </div>
+      <div class="boot-copy">
+        <p class="date-line">Local-first startup</p>
+        <h2>${escapeHTML(bootState.message)}</h2>
+      </div>
+      <div class="boot-progress" aria-hidden="true">
+        <span style="width: ${bootProgress()}%"></span>
+      </div>
+      <div class="boot-checks">
+        ${bootState.checks.map(renderBootCheck).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderBootCheck(check) {
+  return `
+    <div class="boot-check ${systemStatusClass(check.status)}">
+      <span class="check-dot" aria-hidden="true"></span>
+      <div>
+        <strong>${escapeHTML(check.label)}</strong>
+        <p>${escapeHTML(check.message)}</p>
+      </div>
+    </div>
+  `;
+}
+
+function bootProgress() {
+  const complete = bootState.checks.filter((check) => ["ok", "warn", "error"].includes(check.status)).length;
+  const running = bootState.checks.some((check) => check.status === "running") ? 0.5 : 0;
+  return Math.min(100, Math.round(((complete + running) / bootState.checks.length) * 100));
+}
+
+function setBootCheck(id, status, message, detail = {}) {
+  bootState.checks = bootState.checks.map((check) => (
+    check.id === id ? { ...check, status, message: message || check.message, detail: { ...check.detail, ...detail } } : check
+  ));
+  renderBootScreen();
+}
+
+async function runBootSequence() {
+  setBootCheck("server", "running", "Starting local server check.");
+  try {
+    const healthResponse = await fetch(`${getApiBase()}/api/health`, { cache: "no-store" });
+    if (!healthResponse.ok) throw new Error(`Server returned ${healthResponse.status}`);
+    setBootCheck("server", "ok", "Local app server is online.");
+  } catch (error) {
+    setBootCheck("server", "error", `Local app server is not ready. ${error.message}`);
+  }
+
+  for (const id of ["origin", "security", "updates", "ollama", "integrations"]) {
+    setBootCheck(id, "running");
+  }
+
+  try {
+    const payload = await fetchSystemStatus();
+    applySystemStatusPayload(payload);
+    for (const check of payload.checks || []) {
+      setBootCheck(check.id, check.status, check.message, check.detail);
+    }
+    bootState.message = payload.summary || "Ready";
+    renderBootScreen();
+  } catch (error) {
+    for (const id of ["origin", "security", "updates", "ollama", "integrations"]) {
+      setBootCheck(id, "error", `System check failed. ${error.message}`);
+    }
+    bootState.message = "Startup needs attention";
+  }
+
+  const elapsed = Date.now() - bootState.startedAt;
+  await wait(Math.max(350, 1200 - elapsed));
+  bootState.active = false;
+  document.body.dataset.booting = "false";
+  render();
+  handleOAuthReturn();
+  refreshIntegrationStatus();
+  refreshBirdStatus();
+  refreshUpdateStatus(false);
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function wireGlobalEvents() {
   document.querySelectorAll("[data-route]").forEach((button) => {
     button.addEventListener("click", () => setRoute(button.dataset.route));
@@ -362,7 +481,6 @@ function wireGlobalEvents() {
   screen.addEventListener("submit", handleScreenSubmit);
   screen.addEventListener("input", handleScreenInput);
   modalRoot.addEventListener("click", handleModalClick);
-  modalRoot.addEventListener("submit", handleModalSubmit);
 }
 
 function setRoute(nextRoute) {
@@ -1059,6 +1177,69 @@ async function refreshBirdStatus() {
   }
 }
 
+async function fetchSystemStatus() {
+  const response = await fetch(`${getApiBase()}/api/system/status`, { cache: "no-store" });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload.checks) {
+    throw new Error(payload.error || `Server returned ${response.status}`);
+  }
+  return payload;
+}
+
+function applySystemStatusPayload(payload) {
+  state.system = {
+    summary: payload.summary || (payload.ok ? "Ready" : "Needs attention"),
+    checkedAt: payload.checkedAt || new Date().toISOString(),
+    checks: Array.isArray(payload.checks) ? payload.checks : []
+  };
+  const ollama = state.system.checks.find((check) => check.id === "ollama");
+  if (ollama) {
+    state.ai = {
+      ...state.ai,
+      provider: "ollama",
+      model: ollama.detail?.model || state.ai?.model || defaultState.ai.model,
+      available: ollama.status === "ok",
+      message: ollama.message || state.ai?.message || defaultState.ai.message
+    };
+  }
+  const integrations = state.system.checks.find((check) => check.id === "integrations");
+  if (integrations?.detail?.statuses) {
+    Object.assign(state.integrations, integrations.detail.statuses);
+  }
+  if (integrations?.detail?.setup) {
+    state.integrationSetup = {
+      ...state.integrationSetup,
+      ...integrations.detail.setup
+    };
+  }
+  saveState();
+}
+
+async function refreshSystemStatus(showResult = false) {
+  try {
+    const payload = await fetchSystemStatus();
+    applySystemStatusPayload(payload);
+    if (showResult) showToast(payload.summary || "System checked");
+    return payload;
+  } catch (error) {
+    state.system = {
+      summary: "System check failed",
+      checkedAt: new Date().toISOString(),
+      checks: [
+        {
+          id: "system",
+          label: "System checker",
+          status: "error",
+          message: error.message || "System status unavailable"
+        }
+      ]
+    };
+    saveState();
+    if (showResult) showToast("System check failed");
+    throw error;
+  }
+}
+
 async function refreshUpdateStatus(showResult = false) {
   if (showResult) {
     state.updates = {
@@ -1417,8 +1598,15 @@ function openModal(kind) {
   modalRoot.classList.add("is-open");
   modalRoot.setAttribute("aria-hidden", "false");
   modalRoot.innerHTML = renderModal(kind);
+  bindModalForms();
   const firstInput = modalRoot.querySelector("input, textarea, select, button");
   firstInput?.focus();
+}
+
+function bindModalForms() {
+  modalRoot.querySelectorAll("form").forEach((form) => {
+    form.addEventListener("submit", handleModalSubmit);
+  });
 }
 
 function closeModal() {
@@ -1432,6 +1620,16 @@ async function handleModalClick(event) {
   if (event.target === modalRoot || event.target.closest("[data-action='close-modal']")) {
     closeModal();
     return;
+  }
+
+  const submitButton = event.target.closest("button[type='submit']");
+  if (submitButton) {
+    const form = submitButton.closest("form");
+    if (form && modalRoot.contains(form)) {
+      event.preventDefault();
+      await submitModalForm(form);
+      return;
+    }
   }
 
   const updateButton = event.target.closest("[data-action='check-update'], [data-action='install-update'], [data-action='open-update']");
@@ -1450,6 +1648,24 @@ async function handleModalClick(event) {
       return;
     }
     openUpdateDownload();
+    return;
+  }
+
+  const systemButton = event.target.closest("[data-action='refresh-system']");
+  if (systemButton) {
+    const form = modalRoot.querySelector("form[data-form='settings']");
+    if (form) {
+      captureSettingsForm(form);
+      saveState();
+    }
+    systemButton.disabled = true;
+    try {
+      await refreshSystemStatus(true);
+    } catch {
+      // The rendered card will show the failure state.
+    }
+    modalRoot.innerHTML = renderModal("settings");
+    bindModalForms();
     return;
   }
 
@@ -1475,6 +1691,13 @@ async function handleModalClick(event) {
     return;
   }
 
+  const routeButton = event.target.closest("[data-route]");
+  if (routeButton) {
+    closeModal();
+    setRoute(routeButton.dataset.route);
+    return;
+  }
+
   const toggle = event.target.closest("[data-action='toggle-setting']");
   if (!toggle) return;
   const field = toggle.dataset.field;
@@ -1486,7 +1709,10 @@ async function handleModalClick(event) {
 
 async function handleModalSubmit(event) {
   event.preventDefault();
-  const form = event.target;
+  await submitModalForm(event.target);
+}
+
+async function submitModalForm(form) {
   const data = new FormData(form);
   const kind = form.dataset.form;
 
@@ -1716,6 +1942,7 @@ function settingsModal() {
         ${textField("email", "Email", state.profile.email, true, "email")}
       </div>
       ${textField("apiBaseUrl", "Integration Server URL", state.api.baseUrl || getApiBase(), false, "url")}
+      ${systemStatusCard()}
       <div class="integration-list">
         <h3>Integrations</h3>
         ${integrationCard("shopify", "Shopify")}
@@ -1766,6 +1993,58 @@ function updateCard() {
       <p class="subtle">${escapeHTML(checked)}</p>
     </div>
   `;
+}
+
+function systemStatusCard() {
+  const system = state.system || defaultState.system;
+  const checks = Array.isArray(system.checks) && system.checks.length
+    ? system.checks
+    : createBootState().checks;
+  const checked = system.checkedAt ? `Checked ${formatTime(system.checkedAt)}` : "Not checked yet";
+  const overall = checks.some((check) => check.status === "error")
+    ? "Needs attention"
+    : checks.some((check) => check.status === "warn")
+      ? "Ready with notes"
+      : system.summary || "Ready";
+  return `
+    <div class="card system-card" data-system-card>
+      <div class="update-head">
+        <div>
+          <h3>System Check</h3>
+          <p class="subtle">${escapeHTML(checked)}</p>
+        </div>
+        <span class="tag ${systemStatusClass(overall === "Needs attention" ? "error" : overall === "Ready with notes" ? "warn" : "ok")}">${escapeHTML(overall)}</span>
+      </div>
+      <div class="system-check-list">
+        ${checks.map(renderSystemCheck).join("")}
+      </div>
+      <div class="update-actions">
+        <button class="button secondary" type="button" data-action="refresh-system">Run Check</button>
+        <button class="button" type="button" data-route="bird">Open Bird</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderSystemCheck(check) {
+  return `
+    <div class="system-check ${systemStatusClass(check.status)}">
+      <span class="check-dot" aria-hidden="true"></span>
+      <div>
+        <strong>${escapeHTML(check.label || check.id || "Check")}</strong>
+        <p>${escapeHTML(check.message || "Waiting")}</p>
+      </div>
+    </div>
+  `;
+}
+
+function systemStatusClass(status = "") {
+  const value = String(status).toLowerCase();
+  if (value === "ok" || value === "ready") return "is-ok";
+  if (value === "warn" || value.includes("note")) return "is-warn";
+  if (value === "error" || value.includes("attention") || value.includes("failed")) return "is-error";
+  if (value === "running") return "is-running";
+  return "is-pending";
 }
 
 function integrationCard(provider, name) {

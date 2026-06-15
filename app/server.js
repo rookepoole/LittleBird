@@ -64,6 +64,11 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, healthPayload());
       return;
     }
+    if (url.pathname === "/api/system/status") {
+      if (!requireMethod(req, res, "GET")) return;
+      sendJson(res, 200, await systemStatusPayload());
+      return;
+    }
     if (url.pathname === "/api/integrations") {
       if (!requireMethod(req, res, "GET")) return;
       sendJson(res, 200, integrationsPayload());
@@ -319,7 +324,10 @@ async function serveStatic(pathname, res) {
 
   try {
     const data = await fs.readFile(target);
-    res.writeHead(200, { "Content-Type": MIME[path.extname(target)] || "application/octet-stream" });
+    res.writeHead(200, {
+      "Cache-Control": "no-store",
+      "Content-Type": MIME[path.extname(target)] || "application/octet-stream"
+    });
     res.end(data);
   } catch {
     res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
@@ -344,6 +352,86 @@ async function birdStatusPayload() {
     message: status.available
       ? "Local LLM ready"
       : status.error || (status.models?.length ? `Ollama is running, but ${OLLAMA_MODEL} is not installed` : "Ollama is not reachable")
+  };
+}
+
+async function systemStatusPayload() {
+  const tokens = readTokenStore();
+  const statuses = integrationStatuses(tokens);
+  const setup = integrationSetupPayload(tokens);
+  const [ollama, security] = await Promise.all([
+    checkOllamaStatus(1200),
+    securityProbePayload()
+  ]);
+  const connectedIntegrations = Object.values(statuses).filter((status) => status === "Connected").length;
+  const readyIntegrations = Object.values(setup).filter((entry) => entry.connected || entry.oauthReady).length;
+  const checks = [
+    {
+      id: "server",
+      label: "Local server",
+      status: "ok",
+      message: `Little Bird is listening on ${PUBLIC_BASE_URL}`,
+      detail: { host: HOST, port: PORT, loopback: isLoopbackHost(HOST) }
+    },
+    {
+      id: "origin",
+      label: "Local access",
+      status: isLoopbackHost(HOST) && isLoopbackUrl(PUBLIC_BASE_URL) ? "ok" : "warn",
+      message: isLoopbackHost(HOST) && isLoopbackUrl(PUBLIC_BASE_URL)
+        ? "Server is bound to this computer only."
+        : "Check the host binding before sharing this app on a network.",
+      detail: { allowedOrigins: [...LOCAL_ORIGINS].sort() }
+    },
+    {
+      id: "security",
+      label: "Security headers",
+      status: security.status,
+      message: security.message,
+      detail: security.detail
+    },
+    {
+      id: "updates",
+      label: "Update channel",
+      status: isTrustedUpdateFeed(UPDATE_MANIFEST_URL) ? "ok" : "warn",
+      message: isTrustedUpdateFeed(UPDATE_MANIFEST_URL)
+        ? "Updates are checked over a trusted HTTPS release feed."
+        : "Update feed is missing or not on the trusted GitHub release channel.",
+      detail: { url: UPDATE_MANIFEST_URL || "" }
+    },
+    {
+      id: "ollama",
+      label: "Ollama local LLM",
+      status: ollama.available ? "ok" : ollama.models?.length ? "warn" : "error",
+      message: ollama.available
+        ? `Ollama is ready with ${OLLAMA_MODEL}.`
+        : ollama.models?.length
+          ? `Ollama is running, but ${OLLAMA_MODEL} is not installed.`
+          : ollama.error || "Ollama is not reachable.",
+      detail: {
+        baseUrl: OLLAMA_BASE_URL,
+        model: OLLAMA_MODEL,
+        models: ollama.models || []
+      }
+    },
+    {
+      id: "integrations",
+      label: "Store connections",
+      status: connectedIntegrations ? "ok" : readyIntegrations ? "warn" : "warn",
+      message: connectedIntegrations
+        ? `${connectedIntegrations} integration${connectedIntegrations === 1 ? "" : "s"} connected.`
+        : readyIntegrations
+          ? "Some integrations are ready for sign in."
+          : "No store integrations are connected yet.",
+      detail: { statuses, setup }
+    }
+  ];
+  const hasError = checks.some((check) => check.status === "error");
+  const hasWarning = checks.some((check) => check.status === "warn");
+  return {
+    ok: !hasError,
+    checkedAt: new Date().toISOString(),
+    summary: hasError ? "Needs attention" : hasWarning ? "Ready with notes" : "Ready",
+    checks
   };
 }
 
@@ -609,6 +697,106 @@ function healthPayload() {
       tiktok: TIKTOK_VERSION
     }
   };
+}
+
+function isLoopbackHost(value) {
+  const host = String(value || "").toLowerCase();
+  return host === "localhost" || host === "127.0.0.1" || host === "::1";
+}
+
+function isLoopbackUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" && isLoopbackHost(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function isTrustedUpdateFeed(value) {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:"
+      && url.hostname === "api.github.com"
+      && url.pathname === "/repos/rookepoole/LittleBird/releases/latest";
+  } catch {
+    return false;
+  }
+}
+
+async function securityProbePayload() {
+  const detail = {
+    contentSecurityPolicy: false,
+    frameAncestorsDenied: false,
+    dotfilesBlocked: false,
+    foreignOriginWritesBlocked: false,
+    localNoOriginClientsAllowed: true,
+    findings: []
+  };
+
+  try {
+    const response = await probeFetchWithTimeout(`${PUBLIC_BASE_URL}/index.html`, {}, 900);
+    const csp = response.headers.get("content-security-policy") || "";
+    const xFrameOptions = response.headers.get("x-frame-options") || "";
+    detail.contentSecurityPolicy = response.ok
+      && csp.includes("default-src 'self'")
+      && csp.includes("connect-src 'self'")
+      && csp.includes("frame-ancestors 'none'");
+    detail.frameAncestorsDenied = xFrameOptions.toUpperCase() === "DENY";
+  } catch (error) {
+    detail.findings.push(`Header probe failed: ${error.message}`);
+  }
+
+  try {
+    const response = await probeFetchWithTimeout(`${PUBLIC_BASE_URL}/.little-bird-tokens.json`, {}, 900);
+    detail.dotfilesBlocked = response.status === 403;
+  } catch (error) {
+    detail.findings.push(`Dotfile probe failed: ${error.message}`);
+  }
+
+  try {
+    const response = await probeFetchWithTimeout(`${PUBLIC_BASE_URL}/api/disconnect`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: "https://evil.example"
+      },
+      body: JSON.stringify({ provider: "__security_probe__" })
+    }, 900);
+    detail.foreignOriginWritesBlocked = response.status === 403;
+  } catch (error) {
+    detail.findings.push(`Origin probe failed: ${error.message}`);
+  }
+
+  const failed = [
+    ["content security policy", detail.contentSecurityPolicy],
+    ["frame blocking", detail.frameAncestorsDenied],
+    ["dotfile blocking", detail.dotfilesBlocked],
+    ["foreign-origin writes", detail.foreignOriginWritesBlocked]
+  ].filter(([, passed]) => !passed).map(([name]) => name);
+
+  if (failed.length) {
+    detail.findings.push(`Failed checks: ${failed.join(", ")}`);
+  }
+
+  return {
+    status: failed.length ? "error" : "ok",
+    message: failed.length
+      ? "One or more local security probes failed."
+      : "Security probes passed for headers, dotfiles, and foreign-origin writes.",
+    detail
+  };
+}
+
+async function probeFetchWithTimeout(url, options = {}, timeoutMs = 900) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function updatePayload() {

@@ -55,6 +55,13 @@ async function run() {
     record("health endpoint", health.response.status === 200 && health.body.ok === true, String(health.response.status));
     record("health reports app version", Boolean(health.body.app?.version), health.body.app?.version || "");
 
+    const system = await json("/api/system/status");
+    const securityCheck = system.body.checks?.find((check) => check.id === "security");
+    const ollamaCheck = system.body.checks?.find((check) => check.id === "ollama");
+    record("system status endpoint", system.response.status === 200 && Array.isArray(system.body.checks), String(system.response.status));
+    record("system status runs security probes", securityCheck?.status === "ok", securityCheck?.message || "");
+    record("system status reports ollama", Boolean(ollamaCheck?.message), ollamaCheck?.message || "");
+
     const integrations = await json("/api/integrations");
     record("meta account id is normalized", integrations.body.details?.meta?.adAccountId === "123456789012345", integrations.body.details?.meta?.adAccountId || "");
     record("integration setup reports missing meta app credentials", Array.isArray(integrations.body.setup?.meta?.missing) && integrations.body.setup.meta.missing.includes("META_APP_ID"), (integrations.body.setup?.meta?.missing || []).join(","));
