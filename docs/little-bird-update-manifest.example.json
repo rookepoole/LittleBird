@@ -1,5 +1,5 @@
 {
-  "version": "0.3.12",
+  "version": "0.3.13",
   "downloadUrl": "https://github.com/rookepoole/LittleBird/releases/latest/download/LittleBirdSetup.exe",
   "releaseNotes": "Meta Ads setup now normalizes ad account IDs, surfaces OAuth setup diagnostics, and verifies account access during sign-in."
 }

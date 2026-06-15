@@ -20,9 +20,9 @@ Manual metrics, planning, updates, and the local Ollama assistant do not require
 
 Add these redirect URLs to the matching developer app dashboards:
 
-- Shopify: `http://127.0.0.1:4173/auth/shopify/callback`
-- Meta: `http://127.0.0.1:4173/auth/meta/callback`
-- TikTok Business: `http://127.0.0.1:4173/auth/tiktok/callback`
+- Shopify: `http://localhost:4173/auth/shopify/callback`
+- Meta: `http://localhost:4173/auth/meta/callback`
+- TikTok Business: `http://localhost:4173/auth/tiktok/callback`
 
 If you expose the app through a tunnel or hosted domain, set `PUBLIC_BASE_URL` to that public base URL and use that domain in the redirect URLs instead.
 
@@ -87,7 +87,7 @@ node server.js
 Then open:
 
 ```text
-http://127.0.0.1:4173/
+http://localhost:4173/
 ```
 
 If port `4173` is already in use, start the server on another local port:

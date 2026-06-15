@@ -1023,6 +1023,24 @@ body[data-theme="dark"] .day-pill {
   margin-top: 10px;
 }
 
+.credential-hint {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.credential-hint code {
+  display: block;
+  margin-top: 4px;
+  padding: 8px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--blue) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--blue) 18%, transparent);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+
 .integration-actions {
   display: grid;
   grid-template-columns: 1.1fr 1fr auto;

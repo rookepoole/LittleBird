@@ -1,6 +1,6 @@
 # Security Notes
 
-Little Bird is a local-first desktop app. The app starts a local server bound to `127.0.0.1`, stores integration tokens in the user's local app data, and uses a local Ollama model when available.
+Little Bird is a local-first desktop app. The app starts a local server bound to loopback/`localhost`, stores integration tokens in the user's local app data, and uses a local Ollama model when available.
 
 ## Windows Defender and SmartScreen
 

@@ -4,7 +4,7 @@ const net = require("node:net");
 const path = require("node:path");
 
 const DEFAULT_PORT = Number(process.env.PORT || 4173);
-const APP_VERSION = "0.3.12";
+const APP_VERSION = "0.3.13";
 const APP_ID = "com.rookepoole.littlebird";
 
 app.disableHardwareAcceleration();
@@ -71,14 +71,14 @@ async function startLocalServer() {
   const env = {
     ...process.env,
     ELECTRON_RUN_AS_NODE: "1",
-    HOST: "127.0.0.1",
+    HOST: "localhost",
     PORT: String(port),
-    PUBLIC_BASE_URL: `http://127.0.0.1:${port}`,
+    PUBLIC_BASE_URL: `http://localhost:${port}`,
     LITTLE_BIRD_VERSION: APP_VERSION,
     LITTLE_BIRD_DATA_DIR: dataDir
   };
 
-  serverProcess = spawn(process.execPath, [serverPath, `--port=${port}`, "--host=127.0.0.1"], {
+  serverProcess = spawn(process.execPath, [serverPath, `--port=${port}`, "--host=localhost"], {
     cwd: appDir,
     env,
     windowsHide: true,
@@ -197,7 +197,7 @@ function recoverRenderer(port) {
 }
 
 function getAppUrl(port) {
-  return `http://127.0.0.1:${port}/?v=${APP_VERSION}&desktop=1`;
+  return `http://localhost:${port}/?v=${APP_VERSION}&desktop=1`;
 }
 
 async function choosePort(preferredPort) {
@@ -214,12 +214,12 @@ function isPortFree(port) {
       .once("listening", () => {
         tester.close(() => resolve(true));
       })
-      .listen(port, "127.0.0.1");
+      .listen(port, "localhost");
   });
 }
 
 async function waitForHealth(port) {
-  const healthUrl = `http://127.0.0.1:${port}/api/health`;
+  const healthUrl = `http://localhost:${port}/api/health`;
   const started = Date.now();
   while (Date.now() - started < 8000) {
     try {

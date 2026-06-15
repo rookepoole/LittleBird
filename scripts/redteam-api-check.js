@@ -11,9 +11,9 @@ const server = spawn(process.execPath, ["server.js"], {
   cwd: root,
   env: {
     ...process.env,
-    HOST: "127.0.0.1",
+    HOST: "localhost",
     PORT: port,
-    PUBLIC_BASE_URL: `http://127.0.0.1:${port}`,
+    PUBLIC_BASE_URL: `http://localhost:${port}`,
     APP_SLUG: "little-bird-redteam",
     META_AD_ACCOUNT_ID: "(123456789012345)",
     LITTLE_BIRD_UPDATE_MANIFEST_URL: `http://127.0.0.1:${port}/missing-update.json`
@@ -21,7 +21,7 @@ const server = spawn(process.execPath, ["server.js"], {
   stdio: ["ignore", "pipe", "pipe"]
 });
 
-const base = `http://127.0.0.1:${port}`;
+const base = `http://localhost:${port}`;
 const results = [];
 
 function record(name, pass, detail = "") {

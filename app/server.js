@@ -8,7 +8,7 @@ const { spawn } = require("node:child_process");
 const ROOT = __dirname;
 const DATA_ROOT = process.env.LITTLE_BIRD_DATA_DIR ? path.resolve(process.env.LITTLE_BIRD_DATA_DIR) : ROOT;
 fsSync.mkdirSync(DATA_ROOT, { recursive: true });
-const APP_VERSION = process.env.LITTLE_BIRD_VERSION || "0.3.12";
+const APP_VERSION = process.env.LITTLE_BIRD_VERSION || "0.3.13";
 const APP_SLUG = safeAppSlug(process.env.APP_SLUG || "little-bird");
 const TOKEN_PATH = path.join(DATA_ROOT, `.${APP_SLUG}-tokens.json`);
 const STATE_PATH = path.join(DATA_ROOT, `.${APP_SLUG}-oauth-state.json`);
@@ -21,7 +21,7 @@ loadEnvFile(path.join(ROOT, ".env"));
 loadEnvFile(LOCAL_ENV_PATH, { override: true });
 
 const cliArgs = parseCliArgs(process.argv.slice(2));
-const HOST = process.env.HOST || cliArgs.host || "127.0.0.1";
+const HOST = process.env.HOST || cliArgs.host || "localhost";
 const PORT = Number(process.env.PORT || cliArgs.port || 4173);
 const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || `http://${HOST}:${PORT}`).replace(/\/$/, "");
 const LOCAL_ORIGINS = new Set([

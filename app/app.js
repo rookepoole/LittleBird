@@ -1,5 +1,5 @@
 const STORAGE_KEY = "local-companion-state-v1";
-const APP_VERSION = "0.3.12";
+const APP_VERSION = "0.3.13";
 const RELEASE_API_URL = "https://api.github.com/repos/rookepoole/LittleBird/releases/latest";
 
 const defaultState = {
@@ -910,7 +910,7 @@ function applyIntegrationStatusPayload(payload) {
 function getApiBase() {
   const customBase = state.api?.baseUrl?.trim();
   if (customBase) return customBase.replace(/\/$/, "");
-  if (location.protocol === "file:") return "http://127.0.0.1:4173";
+  if (location.protocol === "file:") return "http://localhost:4173";
   return "";
 }
 
@@ -1716,6 +1716,7 @@ function credentialFields(provider) {
           <label class="form-field compact"><span>Client ID</span><input name="shopifyClientId" type="text" autocomplete="off" placeholder="${credentialPlaceholder(setup, "SHOPIFY_CLIENT_ID")}"></label>
           <label class="form-field compact"><span>Client Secret</span><input name="shopifyClientSecret" type="password" autocomplete="new-password" placeholder="${credentialPlaceholder(setup, "SHOPIFY_CLIENT_SECRET")}"></label>
         </div>
+        ${credentialRedirectHint(setup)}
       </details>
     `;
   }
@@ -1727,6 +1728,7 @@ function credentialFields(provider) {
           <label class="form-field compact"><span>App ID</span><input name="metaAppId" type="text" inputmode="numeric" autocomplete="off" placeholder="${credentialPlaceholder(setup, "META_APP_ID")}"></label>
           <label class="form-field compact"><span>App Secret</span><input name="metaAppSecret" type="password" autocomplete="new-password" placeholder="${credentialPlaceholder(setup, "META_APP_SECRET")}"></label>
         </div>
+        ${credentialRedirectHint(setup)}
       </details>
     `;
   }
@@ -1737,6 +1739,7 @@ function credentialFields(provider) {
         <label class="form-field compact"><span>App ID</span><input name="tiktokAppId" type="text" autocomplete="off" placeholder="${credentialPlaceholder(setup, "TIKTOK_APP_ID")}"></label>
         <label class="form-field compact"><span>App Secret</span><input name="tiktokAppSecret" type="password" autocomplete="new-password" placeholder="${credentialPlaceholder(setup, "TIKTOK_APP_SECRET")}"></label>
       </div>
+      ${credentialRedirectHint(setup)}
     </details>
   `;
 }
@@ -1744,6 +1747,11 @@ function credentialFields(provider) {
 function credentialPlaceholder(setup, key) {
   const missing = Array.isArray(setup.missing) ? setup.missing : [];
   return missing.includes(key) ? "Required" : "Saved locally";
+}
+
+function credentialRedirectHint(setup) {
+  if (!setup.callbackUrl) return "";
+  return `<p class="credential-hint">Redirect URI: <code>${escapeHTML(setup.callbackUrl)}</code></p>`;
 }
 
 function integrationField(provider) {
