@@ -4,7 +4,7 @@ Run Little Bird through the desktop app or `server.js` when you want live API sy
 
 ## Environment Variables
 
-Use `.env.example` as the checklist for required values. You can set values as environment variables or create a local `.env` file in this folder with the same keys.
+Use `.env.example` as the checklist for required values. You can set values as environment variables, create a local `.env` file in this folder with the same keys, or save OAuth app credentials from Settings in the desktop app. Desktop-saved credentials are written to the user's local Little Bird data folder, not to the public app bundle.
 
 `APP_SLUG` controls local storage filenames for tokens and OAuth state. The default is `little-bird`.
 
@@ -94,6 +94,7 @@ node server.js --port=4192
 
 - `GET /api/health` reports configured integrations.
 - `GET /api/integrations` reports connection status, OAuth setup readiness, missing app credentials, callback URLs, and locally selected account IDs.
+- `POST /api/integration-credentials` saves whitelisted OAuth app credentials locally. Responses report readiness but never echo app secrets.
 - `GET /api/update` checks the configured release feed.
 - `POST /api/sync` with `{ "source": "all" }` syncs every configured source.
 - `POST /api/sync` with `{ "source": "shopify" }` syncs Shopify only.
@@ -112,5 +113,6 @@ After a successful login, the local server writes access tokens to `.little-bird
 
 - Open the desktop app for live integrations and Little Bird AI. The browser-only file URL remains useful for diagnostics, but local-token operations are protected by local-origin checks.
 - `.env`, `.little-bird-tokens.json`, `.little-bird-oauth-state.json`, and other dotfiles are blocked from static serving.
+- Desktop-saved credential files are local dotfiles in the user's Little Bird data directory and are not packaged into public releases.
 - OAuth state expires after 10 minutes.
 - Sync and disconnect are POST-only so other sites cannot trigger token-backed actions with simple GET requests.

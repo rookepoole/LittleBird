@@ -1,9 +1,11 @@
 .env
 .little-bird-tokens.json
 .little-bird-oauth-state.json
+.*-local.env
 app/.env
 app/.little-bird-tokens.json
 app/.little-bird-oauth-state.json
+app/.*-local.env
 build/
 dist/
 *.log

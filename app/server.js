@@ -8,15 +8,17 @@ const { spawn } = require("node:child_process");
 const ROOT = __dirname;
 const DATA_ROOT = process.env.LITTLE_BIRD_DATA_DIR ? path.resolve(process.env.LITTLE_BIRD_DATA_DIR) : ROOT;
 fsSync.mkdirSync(DATA_ROOT, { recursive: true });
-const APP_VERSION = process.env.LITTLE_BIRD_VERSION || "0.3.11";
+const APP_VERSION = process.env.LITTLE_BIRD_VERSION || "0.3.12";
 const APP_SLUG = safeAppSlug(process.env.APP_SLUG || "little-bird");
 const TOKEN_PATH = path.join(DATA_ROOT, `.${APP_SLUG}-tokens.json`);
 const STATE_PATH = path.join(DATA_ROOT, `.${APP_SLUG}-oauth-state.json`);
+const LOCAL_ENV_PATH = path.join(DATA_ROOT, `.${APP_SLUG}-local.env`);
 const MAX_JSON_BODY_BYTES = 32_000;
 const MAX_INSTALLER_BYTES = 250 * 1024 * 1024;
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
-loadEnvFile();
+loadEnvFile(path.join(ROOT, ".env"));
+loadEnvFile(LOCAL_ENV_PATH, { override: true });
 
 const cliArgs = parseCliArgs(process.argv.slice(2));
 const HOST = process.env.HOST || cliArgs.host || "127.0.0.1";
@@ -93,6 +95,12 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, payload.ok ? 200 : 400, payload);
       return;
     }
+    if (url.pathname === "/api/integration-credentials") {
+      if (!requireMethod(req, res, "POST") || !requireTrustedOrigin(req, res)) return;
+      const payload = await saveIntegrationCredentialsPayload(await readRequestJson(req));
+      sendJson(res, payload.ok ? 200 : 400, payload);
+      return;
+    }
     if (url.pathname === "/api/bird/status") {
       if (!requireMethod(req, res, "GET")) return;
       sendJson(res, 200, await birdStatusPayload());
@@ -147,8 +155,7 @@ server.listen(PORT, HOST, () => {
   console.log(`Little Bird local app running at http://${HOST}:${PORT}/`);
 });
 
-function loadEnvFile() {
-  const envPath = path.join(ROOT, ".env");
+function loadEnvFile(envPath, options = {}) {
   if (!fsSync.existsSync(envPath)) return;
 
   const lines = fsSync.readFileSync(envPath, "utf8").split(/\r?\n/);
@@ -160,10 +167,61 @@ function loadEnvFile() {
     const key = trimmed.slice(0, equalsIndex).trim();
     const rawValue = trimmed.slice(equalsIndex + 1).trim();
     const value = rawValue.replace(/^["']|["']$/g, "");
-    if (key && process.env[key] === undefined) {
+    if (key && (options.override || process.env[key] === undefined)) {
       process.env[key] = value;
     }
   }
+}
+
+function readEnvFile(envPath = LOCAL_ENV_PATH) {
+  if (!fsSync.existsSync(envPath)) return {};
+  const values = {};
+  const lines = fsSync.readFileSync(envPath, "utf8").split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const equalsIndex = trimmed.indexOf("=");
+    if (equalsIndex === -1) continue;
+    const key = trimmed.slice(0, equalsIndex).trim();
+    const rawValue = trimmed.slice(equalsIndex + 1).trim();
+    if (key) values[key] = rawValue.replace(/^["']|["']$/g, "");
+  }
+  return values;
+}
+
+function writeLocalEnv(updates) {
+  const allowedKeys = new Set([
+    "SHOPIFY_CLIENT_ID",
+    "SHOPIFY_CLIENT_SECRET",
+    "SHOPIFY_STORE_DOMAIN",
+    "META_APP_ID",
+    "META_APP_SECRET",
+    "META_AD_ACCOUNT_ID",
+    "TIKTOK_APP_ID",
+    "TIKTOK_APP_SECRET",
+    "TIKTOK_ADVERTISER_ID"
+  ]);
+  const values = readEnvFile();
+  for (const [key, rawValue] of Object.entries(updates)) {
+    if (!allowedKeys.has(key)) continue;
+    const value = limitText(rawValue, 500).trim();
+    if (!value) continue;
+    values[key] = value;
+    process.env[key] = value;
+  }
+
+  const lines = [
+    "# Little Bird local integration credentials.",
+    "# This file is stored on this PC and is not part of the public app."
+  ];
+  for (const key of [...allowedKeys].sort()) {
+    if (values[key]) lines.push(`${key}=${quoteEnvValue(values[key])}`);
+  }
+  fsSync.writeFileSync(LOCAL_ENV_PATH, `${lines.join("\n")}\n`, { mode: 0o600 });
+}
+
+function quoteEnvValue(value) {
+  return `"${String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
 function envValue(key) {
@@ -919,6 +977,54 @@ function providerKey(provider = "") {
   if (normalized === "meta" || normalized === "meta ads") return "meta";
   if (normalized === "tiktok" || normalized === "tiktok shop") return "tiktok";
   return "";
+}
+
+async function saveIntegrationCredentialsPayload(body = {}) {
+  const providers = body.providers && typeof body.providers === "object" ? body.providers : {};
+  const updates = {};
+  collectProviderCredentialUpdates("shopify", providers.shopify, updates);
+  collectProviderCredentialUpdates("meta", providers.meta, updates);
+  collectProviderCredentialUpdates("tiktok", providers.tiktok, updates);
+  if (!Object.keys(updates).length) {
+    return { ok: true, message: "No credential changes.", ...integrationsPayload() };
+  }
+  writeLocalEnv(updates);
+  return { ok: true, message: "Integration credentials saved locally.", ...integrationsPayload() };
+}
+
+function collectProviderCredentialUpdates(provider, credentials = {}, updates) {
+  if (!credentials || typeof credentials !== "object") return;
+  if (provider === "shopify") {
+    setCredential(updates, "SHOPIFY_CLIENT_ID", credentials.clientId);
+    setCredential(updates, "SHOPIFY_CLIENT_SECRET", credentials.clientSecret);
+    const shop = cleanShopifyDomain(credentials.shop);
+    if (shop && isValidShopifyShop(shop)) updates.SHOPIFY_STORE_DOMAIN = shop;
+    return;
+  }
+  if (provider === "meta") {
+    const appId = String(credentials.appId || "").trim();
+    if (appId && !/^\d{5,}$/.test(appId)) {
+      throw httpError(400, "Meta App ID must be numeric.");
+    }
+    setCredential(updates, "META_APP_ID", appId);
+    setCredential(updates, "META_APP_SECRET", credentials.appSecret);
+    const adAccountId = cleanMetaAdAccount(credentials.adAccountId);
+    if (adAccountId) {
+      if (!isValidMetaAdAccount(adAccountId)) throw httpError(400, "Meta ad account ID must be numeric.");
+      updates.META_AD_ACCOUNT_ID = adAccountId;
+    }
+    return;
+  }
+  if (provider === "tiktok") {
+    setCredential(updates, "TIKTOK_APP_ID", credentials.appId);
+    setCredential(updates, "TIKTOK_APP_SECRET", credentials.appSecret);
+    setCredential(updates, "TIKTOK_ADVERTISER_ID", credentials.advertiserId);
+  }
+}
+
+function setCredential(updates, key, value) {
+  const cleaned = limitText(value, 500).trim();
+  if (cleaned) updates[key] = cleaned;
 }
 
 async function syncPayload(source) {

@@ -6,6 +6,7 @@ const root = path.resolve(__dirname, "..", "app");
 const port = "4191";
 const tokenPath = path.join(root, ".little-bird-redteam-tokens.json");
 const statePath = path.join(root, ".little-bird-redteam-oauth-state.json");
+const localEnvPath = path.join(root, ".little-bird-redteam-local.env");
 const server = spawn(process.execPath, ["server.js"], {
   cwd: root,
   env: {
@@ -57,6 +58,25 @@ async function run() {
     const integrations = await json("/api/integrations");
     record("meta account id is normalized", integrations.body.details?.meta?.adAccountId === "123456789012345", integrations.body.details?.meta?.adAccountId || "");
     record("integration setup reports missing meta app credentials", Array.isArray(integrations.body.setup?.meta?.missing) && integrations.body.setup.meta.missing.includes("META_APP_ID"), (integrations.body.setup?.meta?.missing || []).join(","));
+
+    const credentialGet = await fetch(`${base}/api/integration-credentials`);
+    record("credential save rejects GET", credentialGet.status === 405, String(credentialGet.status));
+
+    const credentialBadOrigin = await json("/api/integration-credentials", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: "https://evil.example" },
+      body: JSON.stringify({ providers: { meta: { appId: "123456789", appSecret: "redteam_secret_value" } } })
+    });
+    record("credential save rejects foreign origin", credentialBadOrigin.response.status === 403, String(credentialBadOrigin.response.status));
+
+    const credentialLocal = await json("/api/integration-credentials", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: base },
+      body: JSON.stringify({ providers: { meta: { appId: "123456789", appSecret: "redteam_secret_value" } } })
+    });
+    const credentialResponse = JSON.stringify(credentialLocal.body);
+    record("credential save accepts local POST", credentialLocal.response.status === 200 && credentialLocal.body.setup?.meta?.oauthReady === true, String(credentialLocal.response.status));
+    record("credential response does not echo secrets", !credentialResponse.includes("redteam_secret_value"), credentialResponse.includes("redteam_secret_value") ? "secret leaked" : "masked");
 
     const update = await json("/api/update");
     record("update endpoint is local and safe", update.response.status === 200 && update.body.currentVersion, update.body.message || "");
@@ -129,7 +149,7 @@ async function run() {
     record("invalid json returns 400", badJson.response.status === 400, String(badJson.response.status));
   } finally {
     server.kill();
-    for (const filePath of [tokenPath, statePath]) {
+    for (const filePath of [tokenPath, statePath, localEnvPath]) {
       try {
         fs.rmSync(filePath, { force: true });
       } catch {

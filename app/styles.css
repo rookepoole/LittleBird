@@ -1004,6 +1004,25 @@ body[data-theme="dark"] .day-pill {
   line-height: 1.4;
 }
 
+.credential-panel {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.credential-panel summary {
+  cursor: pointer;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.credential-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .integration-actions {
   display: grid;
   grid-template-columns: 1.1fr 1fr auto;
@@ -1312,7 +1331,8 @@ body[data-theme="dark"] .day-pill {
 
 @media (max-width: 359px) {
   .quick-actions,
-  .sync-grid {
+  .sync-grid,
+  .credential-grid {
     grid-template-columns: 1fr;
   }
 

@@ -1,5 +1,5 @@
 const STORAGE_KEY = "local-companion-state-v1";
-const APP_VERSION = "0.3.11";
+const APP_VERSION = "0.3.12";
 const RELEASE_API_URL = "https://api.github.com/repos/rookepoole/LittleBird/releases/latest";
 
 const defaultState = {
@@ -879,12 +879,32 @@ function applyIntegrationPayload(payload) {
   if (payload.integrations) {
     Object.assign(state.integrations, payload.integrations);
   }
+  applyIntegrationStatusPayload(payload);
   state.lastSync = payload.lastSync ? `Synced ${formatTime(payload.lastSync)}` : "Synced now";
   if (payload.warnings?.length) {
     addBirdMessage("bird", `Sync note: ${payload.warnings.join(" ")}`);
   } else {
     addBirdMessage("bird", "Live metrics refreshed. Review the dashboard before changing budget or content rhythm.");
   }
+}
+
+function applyIntegrationStatusPayload(payload) {
+  if (payload.integrations) Object.assign(state.integrations, payload.integrations);
+  if (payload.details) {
+    state.integrationDetails = {
+      ...state.integrationDetails,
+      ...payload.details
+    };
+  }
+  if (payload.setup) {
+    state.integrationSetup = {
+      ...state.integrationSetup,
+      ...payload.setup
+    };
+  }
+  if (payload.details?.shopify?.shop) state.integrationSettings.shopifyStoreDomain = payload.details.shopify.shop;
+  if (payload.details?.meta?.adAccountId) state.integrationSettings.metaAdAccountId = cleanMetaAdAccountInput(payload.details.meta.adAccountId);
+  if (payload.details?.tiktok?.advertiserId) state.integrationSettings.tiktokAdvertiserId = payload.details.tiktok.advertiserId;
 }
 
 function getApiBase() {
@@ -920,22 +940,7 @@ async function refreshIntegrationStatus() {
     const response = await fetch(`${getApiBase()}/api/integrations`);
     if (!response.ok) return;
     const payload = await response.json();
-    if (payload.integrations) Object.assign(state.integrations, payload.integrations);
-    if (payload.details) {
-      state.integrationDetails = {
-        ...state.integrationDetails,
-        ...payload.details
-      };
-    }
-    if (payload.setup) {
-      state.integrationSetup = {
-        ...state.integrationSetup,
-        ...payload.setup
-      };
-    }
-    if (payload.details?.shopify?.shop) state.integrationSettings.shopifyStoreDomain = payload.details.shopify.shop;
-    if (payload.details?.meta?.adAccountId) state.integrationSettings.metaAdAccountId = cleanMetaAdAccountInput(payload.details.meta.adAccountId);
-    if (payload.details?.tiktok?.advertiserId) state.integrationSettings.tiktokAdvertiserId = payload.details.tiktok.advertiserId;
+    applyIntegrationStatusPayload(payload);
     saveState();
     render();
   } catch {
@@ -1177,6 +1182,44 @@ function captureSettingsForm(form) {
   state.integrationSettings.tiktokAdvertiserId = clean(form.elements.tiktokAdvertiserId?.value);
 }
 
+async function saveIntegrationCredentials(data) {
+  const providers = {
+    shopify: compactObject({
+      clientId: clean(data.get("shopifyClientId")),
+      clientSecret: clean(data.get("shopifyClientSecret")),
+      shop: state.integrationSettings.shopifyStoreDomain
+    }),
+    meta: compactObject({
+      appId: clean(data.get("metaAppId")),
+      appSecret: clean(data.get("metaAppSecret")),
+      adAccountId: state.integrationSettings.metaAdAccountId
+    }),
+    tiktok: compactObject({
+      appId: clean(data.get("tiktokAppId")),
+      appSecret: clean(data.get("tiktokAppSecret")),
+      advertiserId: state.integrationSettings.tiktokAdvertiserId
+    })
+  };
+  const hasChanges = Object.values(providers).some((provider) => Object.keys(provider).length);
+  if (!hasChanges) return false;
+
+  const response = await fetch(`${getApiBase()}/api/integration-credentials`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ providers })
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.ok === false) {
+    throw new Error(payload.error || `Server returned ${response.status}`);
+  }
+  applyIntegrationStatusPayload(payload);
+  return true;
+}
+
+function compactObject(value) {
+  return Object.fromEntries(Object.entries(value).filter(([, entry]) => clean(entry)));
+}
+
 async function disconnectIntegration(provider) {
   try {
     const response = await fetch(`${getApiBase()}/api/disconnect`, {
@@ -1325,7 +1368,20 @@ async function handleModalClick(event) {
   const integrationButton = event.target.closest("[data-action='connect-integration'], [data-action='disconnect-integration'], [data-action='sync-modal-source']");
   if (integrationButton) {
     const { action, provider } = integrationButton.dataset;
-    if (action === "connect-integration") connectIntegration(provider);
+    if (action === "connect-integration") {
+      const form = modalRoot.querySelector("form[data-form='settings']");
+      if (form) {
+        captureSettingsForm(form);
+        try {
+          await saveIntegrationCredentials(new FormData(form));
+          saveState();
+        } catch (error) {
+          showToast(error.message || "Credential save failed");
+          return;
+        }
+      }
+      connectIntegration(provider);
+    }
     if (action === "disconnect-integration") await disconnectIntegration(provider);
     if (action === "sync-modal-source") syncMetrics(provider);
     return;
@@ -1413,8 +1469,14 @@ async function handleModalSubmit(event) {
     }
     state.api.baseUrl = clean(data.get("apiBaseUrl"));
     state.integrationSettings.shopifyStoreDomain = clean(data.get("shopifyStoreDomain"));
-    state.integrationSettings.metaAdAccountId = clean(data.get("metaAdAccountId"));
+    state.integrationSettings.metaAdAccountId = cleanMetaAdAccountInput(data.get("metaAdAccountId"));
     state.integrationSettings.tiktokAdvertiserId = clean(data.get("tiktokAdvertiserId"));
+    try {
+      await saveIntegrationCredentials(data);
+    } catch (error) {
+      showToast(error.message || "Credential save failed");
+      return;
+    }
     showToast("Settings saved");
   }
 
@@ -1633,6 +1695,7 @@ function integrationCard(provider, name) {
         <span class="tag ${integrationStatusClass(status)}">${escapeHTML(status)}</span>
       </div>
       ${help ? `<p class="integration-help">${escapeHTML(help)}</p>` : ""}
+      ${credentialFields(provider)}
       <div class="integration-actions">
         <button class="button" type="button" data-action="connect-integration" data-provider="${provider}">${isConnected ? "Reconnect" : "Connect"}</button>
         <button class="button secondary" type="button" data-action="sync-modal-source" data-provider="${provider}">Sync</button>
@@ -1640,6 +1703,47 @@ function integrationCard(provider, name) {
       </div>
     </article>
   `;
+}
+
+function credentialFields(provider) {
+  const setup = state.integrationSetup?.[provider] || {};
+  const open = setup.oauthReady === false ? " open" : "";
+  if (provider === "shopify") {
+    return `
+      <details class="credential-panel"${open}>
+        <summary>OAuth app</summary>
+        <div class="credential-grid">
+          <label class="form-field compact"><span>Client ID</span><input name="shopifyClientId" type="text" autocomplete="off" placeholder="${credentialPlaceholder(setup, "SHOPIFY_CLIENT_ID")}"></label>
+          <label class="form-field compact"><span>Client Secret</span><input name="shopifyClientSecret" type="password" autocomplete="new-password" placeholder="${credentialPlaceholder(setup, "SHOPIFY_CLIENT_SECRET")}"></label>
+        </div>
+      </details>
+    `;
+  }
+  if (provider === "meta") {
+    return `
+      <details class="credential-panel"${open}>
+        <summary>OAuth app</summary>
+        <div class="credential-grid">
+          <label class="form-field compact"><span>App ID</span><input name="metaAppId" type="text" inputmode="numeric" autocomplete="off" placeholder="${credentialPlaceholder(setup, "META_APP_ID")}"></label>
+          <label class="form-field compact"><span>App Secret</span><input name="metaAppSecret" type="password" autocomplete="new-password" placeholder="${credentialPlaceholder(setup, "META_APP_SECRET")}"></label>
+        </div>
+      </details>
+    `;
+  }
+  return `
+    <details class="credential-panel"${open}>
+      <summary>OAuth app</summary>
+      <div class="credential-grid">
+        <label class="form-field compact"><span>App ID</span><input name="tiktokAppId" type="text" autocomplete="off" placeholder="${credentialPlaceholder(setup, "TIKTOK_APP_ID")}"></label>
+        <label class="form-field compact"><span>App Secret</span><input name="tiktokAppSecret" type="password" autocomplete="new-password" placeholder="${credentialPlaceholder(setup, "TIKTOK_APP_SECRET")}"></label>
+      </div>
+    </details>
+  `;
+}
+
+function credentialPlaceholder(setup, key) {
+  const missing = Array.isArray(setup.missing) ? setup.missing : [];
+  return missing.includes(key) ? "Required" : "Saved locally";
 }
 
 function integrationField(provider) {
