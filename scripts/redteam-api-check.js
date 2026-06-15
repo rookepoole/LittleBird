@@ -15,6 +15,8 @@ const server = spawn(process.execPath, ["server.js"], {
     PORT: port,
     PUBLIC_BASE_URL: `http://localhost:${port}`,
     APP_SLUG: "little-bird-redteam",
+    OLLAMA_BASE_URL: "http://127.0.0.1:59998",
+    OLLAMA_EXE: path.join(root, "missing-ollama.exe"),
     META_AD_ACCOUNT_ID: "(123456789012345)",
     LITTLE_BIRD_UPDATE_MANIFEST_URL: `http://127.0.0.1:${port}/missing-update.json`
   },
@@ -100,6 +102,23 @@ async function run() {
 
     const status = await json("/api/bird/status");
     record("bird status endpoint", status.response.status === 200 && status.body.provider === "ollama", status.body.message);
+
+    const startGet = await fetch(`${base}/api/bird/start`);
+    record("bird start rejects GET", startGet.status === 405, String(startGet.status));
+
+    const startBadOrigin = await json("/api/bird/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: "https://evil.example" },
+      body: "{}"
+    });
+    record("bird start rejects foreign origin", startBadOrigin.response.status === 403, String(startBadOrigin.response.status));
+
+    const startLocal = await json("/api/bird/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: base },
+      body: "{}"
+    });
+    record("bird start reports missing executable safely", startLocal.response.status === 503 && startLocal.body.action === "install-ollama", startLocal.body.message || String(startLocal.response.status));
 
     const chat = await json("/api/bird/chat", {
       method: "POST",

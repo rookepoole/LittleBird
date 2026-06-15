@@ -68,6 +68,8 @@ OLLAMA_MODEL=qwen2.5:3b
 
 If Ollama is not installed, not running, or the model has not been pulled, the app uses a built-in fallback reply and shows that status in the Little Bird screen.
 
+When Ollama is installed but the local server is stopped, the Little Bird screen can start `ollama serve` through the local app server. The start action is POST-only and protected by the same local-origin checks as token-backed actions. Little Bird does not silently download models; pull `qwen2.5:3b` locally before relying on the assistant.
+
 When Store Sync is available, Little Bird sends the local model a sanitized store snapshot: source status, store metadata, recent products, newly changed products, top products, order totals, and ad summaries. Access tokens, OAuth state, and raw customer records are not included in the model prompt.
 
 ## Startup System Check
@@ -115,6 +117,7 @@ node server.js --port=4192
 - `POST /api/sync` with `{ "source": "tiktok" }` syncs TikTok only.
 - `POST /api/disconnect` with `{ "provider": "shopify" }` disconnects a saved token.
 - `GET /api/bird/status` reports the local Ollama model status.
+- `POST /api/bird/start` starts a locally installed Ollama server when it is not already running.
 - `POST /api/bird/chat` sends a Little Bird message to the local model.
 - `GET /auth/shopify/start?shop=your-store.myshopify.com` starts Shopify login.
 - `GET /auth/meta/start` starts Meta login.

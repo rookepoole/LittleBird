@@ -38,6 +38,8 @@ const META_SCOPES = process.env.META_SCOPES || "ads_read,business_management";
 const UPDATE_MANIFEST_URL = process.env.LITTLE_BIRD_UPDATE_MANIFEST_URL || "https://api.github.com/repos/rookepoole/LittleBird/releases/latest";
 const OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434").replace(/\/$/, "");
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "qwen2.5:3b";
+const OLLAMA_CHAT_TIMEOUT_MS = Number(process.env.OLLAMA_CHAT_TIMEOUT_MS || 90_000);
+let ollamaStartPromise = null;
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -109,6 +111,12 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/bird/status") {
       if (!requireMethod(req, res, "GET")) return;
       sendJson(res, 200, await birdStatusPayload());
+      return;
+    }
+    if (url.pathname === "/api/bird/start") {
+      if (!requireMethod(req, res, "POST") || !requireTrustedOrigin(req, res)) return;
+      const payload = await startOllamaPayload();
+      sendJson(res, payload.ok ? 200 : 503, payload);
       return;
     }
     if (url.pathname === "/api/bird/chat") {
@@ -349,9 +357,31 @@ async function birdStatusPayload() {
     model: OLLAMA_MODEL,
     baseUrl: OLLAMA_BASE_URL,
     available: status.available,
+    running: status.running,
+    installed: status.installed,
+    canStart: status.canStart,
+    action: status.action,
     message: status.available
       ? "Local LLM ready"
-      : status.error || (status.models?.length ? `Ollama is running, but ${OLLAMA_MODEL} is not installed` : "Ollama is not reachable")
+      : status.message || status.error || (status.models?.length ? `Ollama is running, but ${OLLAMA_MODEL} is not installed` : "Ollama is not reachable"),
+    detail: ollamaPublicDetail(status)
+  };
+}
+
+async function startOllamaPayload() {
+  const result = await ensureOllamaStarted(9000);
+  return {
+    ok: result.available,
+    provider: "ollama",
+    model: OLLAMA_MODEL,
+    baseUrl: OLLAMA_BASE_URL,
+    available: result.available,
+    running: result.running,
+    installed: result.installed,
+    canStart: result.canStart,
+    action: result.action,
+    message: result.message || result.error || "Ollama is not reachable",
+    detail: ollamaPublicDetail(result)
   };
 }
 
@@ -401,17 +431,13 @@ async function systemStatusPayload() {
     {
       id: "ollama",
       label: "Ollama local LLM",
-      status: ollama.available ? "ok" : ollama.models?.length ? "warn" : "error",
+      status: ollama.available ? "ok" : ollama.running && ollama.models?.length ? "warn" : "error",
       message: ollama.available
         ? `Ollama is ready with ${OLLAMA_MODEL}.`
-        : ollama.models?.length
+        : ollama.running && ollama.models?.length
           ? `Ollama is running, but ${OLLAMA_MODEL} is not installed.`
-          : ollama.error || "Ollama is not reachable.",
-      detail: {
-        baseUrl: OLLAMA_BASE_URL,
-        model: OLLAMA_MODEL,
-        models: ollama.models || []
-      }
+          : ollama.message || ollama.error || "Ollama is not reachable.",
+      detail: ollamaPublicDetail(ollama)
     },
     {
       id: "integrations",
@@ -450,8 +476,10 @@ async function birdChatPayload(body) {
   };
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30_000);
+  const timeout = setTimeout(() => controller.abort(), OLLAMA_CHAT_TIMEOUT_MS);
+  let ollamaStatus = null;
   try {
+    ollamaStatus = await ensureOllamaStarted(7000);
     const response = await fetchJson(`${OLLAMA_BASE_URL}/api/chat`, {
       method: "POST",
       signal: controller.signal,
@@ -492,14 +520,25 @@ async function birdChatPayload(body) {
       ok: true,
       provider: "ollama",
       model: OLLAMA_MODEL,
+      available: true,
+      running: true,
+      installed: ollamaStatus?.installed ?? true,
+      canStart: false,
+      action: "ready",
       text
     };
   } catch (error) {
     const errorMessage = ollamaErrorMessage(error);
+    if (!ollamaStatus) ollamaStatus = await checkOllamaStatus(700);
     return {
       ok: false,
       provider: "fallback",
       model: OLLAMA_MODEL,
+      available: false,
+      running: Boolean(ollamaStatus.running),
+      installed: Boolean(ollamaStatus.installed),
+      canStart: Boolean(ollamaStatus.canStart),
+      action: ollamaStatus.action || "",
       error: errorMessage,
       text: fallbackBirdReply(message, context.metrics, context.store, context.dataMode)
     };
@@ -509,6 +548,8 @@ async function birdChatPayload(body) {
 }
 
 async function checkOllamaStatus(timeoutMs) {
+  const executable = findOllamaExecutable();
+  const localBase = isLoopbackUrl(OLLAMA_BASE_URL);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -516,14 +557,207 @@ async function checkOllamaStatus(timeoutMs) {
     if (!response.ok) throw new Error(`Ollama returned ${response.status}`);
     const body = await response.json();
     const models = Array.isArray(body.models) ? body.models.map((model) => model.name) : [];
+    const modelInstalled = models.some(ollamaModelMatches);
     return {
-      available: models.some((name) => name === OLLAMA_MODEL || name.startsWith(`${OLLAMA_MODEL}:`)),
-      models
+      available: modelInstalled,
+      running: true,
+      installed: executable.installed,
+      canStart: false,
+      action: modelInstalled ? "ready" : "install-model",
+      message: modelInstalled
+        ? `Ollama is ready with ${OLLAMA_MODEL}.`
+        : `Ollama is running, but ${OLLAMA_MODEL} is not installed.`,
+      models,
+      executablePath: executable.path,
+      localBase
     };
   } catch (error) {
-    return { available: false, error: ollamaErrorMessage(error) };
+    const errorMessage = ollamaErrorMessage(error);
+    return {
+      available: false,
+      running: false,
+      installed: executable.installed,
+      canStart: localBase && executable.installed,
+      action: localBase && executable.installed ? "start" : executable.installed ? "check-url" : "install-ollama",
+      message: executable.installed
+        ? "Ollama is installed but the local server is not running."
+        : "Ollama is not installed or Little Bird cannot find it.",
+      error: errorMessage,
+      models: [],
+      executablePath: executable.path,
+      localBase
+    };
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+async function ensureOllamaStarted(waitMs = 9000) {
+  const current = await checkOllamaStatus(900);
+  if (current.running) return current;
+  if (!current.canStart) return current;
+  if (ollamaStartPromise) return ollamaStartPromise;
+
+  ollamaStartPromise = startOllamaServer(waitMs).finally(() => {
+    ollamaStartPromise = null;
+  });
+  return ollamaStartPromise;
+}
+
+async function startOllamaServer(waitMs) {
+  const executable = findOllamaExecutable();
+  if (!isLoopbackUrl(OLLAMA_BASE_URL)) {
+    return {
+      available: false,
+      running: false,
+      installed: executable.installed,
+      canStart: false,
+      action: "check-url",
+      message: "Little Bird can only auto-start Ollama for localhost URLs.",
+      error: "OLLAMA_BASE_URL is not a localhost URL.",
+      models: [],
+      executablePath: executable.path,
+      localBase: false
+    };
+  }
+  if (!executable.installed) {
+    return {
+      available: false,
+      running: false,
+      installed: false,
+      canStart: false,
+      action: "install-ollama",
+      message: "Ollama is not installed or Little Bird cannot find it.",
+      error: executable.error || "Ollama executable was not found.",
+      models: [],
+      executablePath: "",
+      localBase: true
+    };
+  }
+
+  let stderr = "";
+  try {
+    const ollamaUrl = new URL(OLLAMA_BASE_URL);
+    const child = spawn(executable.path, ["serve"], {
+      detached: true,
+      windowsHide: true,
+      stdio: ["ignore", "ignore", "pipe"],
+      env: {
+        ...process.env,
+        OLLAMA_HOST: ollamaUrl.host
+      }
+    });
+    child.stderr?.on("data", (chunk) => {
+      stderr = limitText(`${stderr} ${chunk.toString("utf8")}`, 1200);
+    });
+    child.once("error", (error) => {
+      stderr = limitText(`${stderr} ${error.message}`, 1200);
+    });
+    child.unref();
+  } catch (error) {
+    return {
+      available: false,
+      running: false,
+      installed: true,
+      canStart: true,
+      action: "start",
+      message: "Little Bird could not start Ollama.",
+      error: error.message || "Ollama start failed.",
+      models: [],
+      executablePath: executable.path,
+      localBase: true
+    };
+  }
+
+  const started = Date.now();
+  while (Date.now() - started < waitMs) {
+    await delay(350);
+    const status = await checkOllamaStatus(900);
+    if (status.running) return status;
+  }
+
+  const logHint = readOllamaLogHint();
+  return {
+    available: false,
+    running: false,
+    installed: true,
+    canStart: true,
+    action: "start",
+    message: "Ollama did not start in time.",
+    error: stderr || logHint || "The local Ollama server did not answer after start.",
+    models: [],
+    executablePath: executable.path,
+    localBase: true
+  };
+}
+
+function findOllamaExecutable() {
+  const explicit = String(process.env.OLLAMA_EXE || process.env.OLLAMA_PATH || "").trim();
+  if (explicit) {
+    const resolved = path.resolve(explicit);
+    return fsSync.existsSync(resolved)
+      ? { installed: true, path: resolved }
+      : { installed: false, path: "", error: `Configured Ollama executable was not found: ${resolved}` };
+  }
+
+  const executableName = process.platform === "win32" ? "ollama.exe" : "ollama";
+  const candidates = [];
+  for (const dir of String(process.env.PATH || "").split(path.delimiter)) {
+    if (dir) candidates.push(path.join(dir, executableName));
+  }
+  if (process.platform === "win32") {
+    candidates.push(
+      path.join(process.env.LOCALAPPDATA || "", "Programs", "Ollama", "ollama.exe"),
+      path.join(process.env.LOCALAPPDATA || "", "Ollama", "ollama.exe"),
+      path.join(process.env.ProgramFiles || "C:\\Program Files", "Ollama", "ollama.exe"),
+      path.join(process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "Ollama", "ollama.exe")
+    );
+  } else {
+    candidates.push("/usr/local/bin/ollama", "/opt/homebrew/bin/ollama", "/usr/bin/ollama");
+  }
+
+  for (const candidate of candidates.filter(Boolean)) {
+    try {
+      if (fsSync.existsSync(candidate)) return { installed: true, path: candidate };
+    } catch {
+      // Keep scanning candidate paths.
+    }
+  }
+  return { installed: false, path: "", error: "Ollama executable was not found." };
+}
+
+function ollamaModelMatches(name) {
+  const model = String(name || "");
+  return model === OLLAMA_MODEL || model.startsWith(`${OLLAMA_MODEL}:`);
+}
+
+function ollamaPublicDetail(status = {}) {
+  return {
+    baseUrl: OLLAMA_BASE_URL,
+    model: OLLAMA_MODEL,
+    models: status.models || [],
+    running: Boolean(status.running),
+    installed: Boolean(status.installed),
+    canStart: Boolean(status.canStart),
+    action: status.action || "",
+    executableFound: Boolean(status.executablePath),
+    localBase: status.localBase !== false
+  };
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function readOllamaLogHint() {
+  if (process.platform !== "win32") return "";
+  const logPath = path.join(process.env.LOCALAPPDATA || "", "Ollama", "app.log");
+  try {
+    if (!fsSync.existsSync(logPath)) return "";
+    const text = fsSync.readFileSync(logPath, "utf8");
+    return limitText(text.split(/\r?\n/).slice(-8).join(" "), 1200);
+  } catch (error) {
+    return limitText(`Could not read Ollama log: ${error.message}`, 300);
   }
 }
 

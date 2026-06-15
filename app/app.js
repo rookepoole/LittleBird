@@ -27,7 +27,11 @@ const defaultState = {
     provider: "ollama",
     model: "qwen2.5:3b",
     available: false,
-    message: "Checking local LLM"
+    message: "Checking local LLM",
+    running: false,
+    installed: false,
+    canStart: false,
+    action: ""
   },
   system: {
     summary: "Checking",
@@ -760,6 +764,7 @@ function renderBird() {
   const ai = state.ai || defaultState.ai;
   const aiLabel = ai.available ? `Local ${ai.model || "LLM"}` : "Fallback";
   const aiClass = ai.available ? "green" : "blue";
+  const canStartOllama = !ai.available && (ai.canStart || ai.action === "start");
   const productCount = state.store?.catalog?.recentProducts?.length || 0;
   const notes = state.birdNotes.map((message) => `
     <article class="message ${message.from === "bird" ? "from-bird" : "from-user"}">
@@ -778,6 +783,14 @@ function renderBird() {
         <h2>${escapeHTML(birdHeadline())}</h2>
         <p class="muted">${escapeHTML(makeBirdInsight())}</p>
         <p class="date-line">${escapeHTML(`${ai.message || "Local LLM status unavailable"} - ${productCount ? `${productCount} synced products` : "sync a store for product context"}`)}</p>
+        ${canStartOllama ? `
+          <div class="bird-status-actions">
+            <button class="button secondary" type="button" data-action="start-ollama">
+              <svg><use href="#icon-sync"></use></svg>
+              Start Ollama
+            </button>
+          </div>
+        ` : ""}
       </div>
     </section>
 
@@ -937,6 +950,7 @@ function handleScreenClick(event) {
   if (action === "toggle-experiment") toggleExperiment(id);
   if (action === "generate-insight") generateBirdInsight();
   if (action === "send-bird-inline") submitBirdInline(button.closest("form"));
+  if (action === "start-ollama") startOllamaFromApp();
 }
 
 function handleScreenSubmit(event) {
@@ -1158,12 +1172,7 @@ async function refreshBirdStatus() {
     const response = await fetch(`${getApiBase()}/api/bird/status`);
     if (!response.ok) return;
     const payload = await response.json();
-    state.ai = {
-      provider: payload.provider || "ollama",
-      model: payload.model || state.ai?.model || defaultState.ai.model,
-      available: Boolean(payload.available),
-      message: payload.message || "Local LLM status unavailable"
-    };
+    applyBirdStatusPayload(payload);
     saveState();
     if (route === "bird") render();
   } catch {
@@ -1174,6 +1183,52 @@ async function refreshBirdStatus() {
     };
     saveState();
     if (route === "bird") render();
+  }
+}
+
+function applyBirdStatusPayload(payload = {}) {
+  state.ai = {
+    provider: payload.provider || "ollama",
+    model: payload.model || state.ai?.model || defaultState.ai.model,
+    available: Boolean(payload.available),
+    running: Boolean(payload.running),
+    installed: Boolean(payload.installed),
+    canStart: Boolean(payload.canStart),
+    action: payload.action || "",
+    message: payload.message || "Local LLM status unavailable"
+  };
+}
+
+async function startOllamaFromApp() {
+  showToast("Starting Ollama...");
+  state.ai = {
+    ...state.ai,
+    message: "Starting Ollama local server..."
+  };
+  if (route === "bird") render();
+  try {
+    const response = await fetch(`${getApiBase()}/api/bird/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}"
+    });
+    const payload = await response.json().catch(() => ({}));
+    applyBirdStatusPayload(payload);
+    saveState();
+    showToast(payload.available ? "Ollama ready" : "Ollama needs attention");
+    if (route === "bird") render();
+    return payload;
+  } catch (error) {
+    state.ai = {
+      ...state.ai,
+      available: false,
+      running: false,
+      message: error.message || "Ollama could not be started"
+    };
+    saveState();
+    showToast("Ollama could not start");
+    if (route === "bird") render();
+    return null;
   }
 }
 
@@ -1199,6 +1254,10 @@ function applySystemStatusPayload(payload) {
       provider: "ollama",
       model: ollama.detail?.model || state.ai?.model || defaultState.ai.model,
       available: ollama.status === "ok",
+      running: Boolean(ollama.detail?.running),
+      installed: Boolean(ollama.detail?.installed),
+      canStart: Boolean(ollama.detail?.canStart),
+      action: ollama.detail?.action || "",
       message: ollama.message || state.ai?.message || defaultState.ai.message
     };
   }
@@ -1586,6 +1645,10 @@ async function fetchBirdReply(message) {
       provider: payload.provider || "fallback",
       model: payload.model || state.ai?.model || defaultState.ai.model,
       available: usedLocalModel,
+      running: Boolean(payload.running ?? usedLocalModel),
+      installed: Boolean(payload.installed ?? state.ai?.installed),
+      canStart: Boolean(payload.canStart ?? state.ai?.canStart),
+      action: payload.action || state.ai?.action || "",
       message: usedLocalModel
         ? `Local LLM ready: ${payload.model || state.ai?.model || defaultState.ai.model}`
         : payload.error || "Using built-in fallback until Ollama is ready"

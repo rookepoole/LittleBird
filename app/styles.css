@@ -555,6 +555,16 @@ body[data-booting="true"] .fab {
   gap: 12px;
 }
 
+.bird-status-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.bird-status-actions .button {
+  min-height: 46px;
+}
+
 .project-list,
 .calendar-list,
 .post-list,
