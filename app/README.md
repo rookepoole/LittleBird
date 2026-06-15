@@ -35,13 +35,14 @@ http://127.0.0.1:4192/?v=0.3.12
 - Node.js 20 or newer for the local server.
 - Ollama is optional. Without it, Little Bird uses a built-in fallback response.
 - For local AI, install Ollama and run `ollama pull qwen2.5:3b`.
+- Live Meta Ads metrics in the current open-source local model require the user to provide their own Meta Developer App ID and App Secret. Manual metrics and local AI do not require a Meta developer account.
 
 ## First Setup
 
 1. Open Settings.
 2. Set the app name, business name, business type, and primary product or offer.
 3. Connect Shopify, Meta Ads, or TikTok Shop, then use Store Sync. Manual metrics are only an override for demos, offline work, or a broken source.
-4. Add OAuth app credentials in `.env` when real customer logins are needed.
+4. Add OAuth app credentials in Settings or `.env` when real customer logins are needed. Do not put shared app secrets into public builds.
 5. For distribution, use the desktop installer instead of asking users to open the browser manually.
 
 ## Store Intelligence

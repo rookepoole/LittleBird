@@ -10,6 +10,12 @@ Use `.env.example` as the checklist for required values. You can set values as e
 
 `LITTLE_BIRD_VERSION` labels the installed build. `LITTLE_BIRD_UPDATE_MANIFEST_URL` can point to a GitHub latest-release API URL or a small JSON manifest with `version`, `downloadUrl`, and `releaseNotes`.
 
+## Current OAuth Model
+
+The open-source desktop build does not ship shared provider secrets. For live Meta Ads metrics, each user must supply their own Meta Developer App ID and App Secret in Settings or through local environment variables. This is intentional for security: a public desktop app cannot safely contain one shared Meta App Secret.
+
+Manual metrics, planning, updates, and the local Ollama assistant do not require a Meta developer account. A later hosted OAuth relay can remove the developer-app setup for ordinary users while keeping the publisher's shared secrets off the desktop.
+
 ## OAuth Redirect URLs
 
 Add these redirect URLs to the matching developer app dashboards:

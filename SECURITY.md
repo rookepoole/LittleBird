@@ -20,6 +20,7 @@ Until signing is set up, users can verify the release came from this public repo
 - OAuth and sync endpoints require local trusted origins.
 - Sync and disconnect are POST-only.
 - Dotfiles such as `.env`, `.little-bird-tokens.json`, and `.little-bird-oauth-state.json` are blocked from static serving.
+- Shared provider app secrets are not bundled into the public desktop app. In the current local-only model, users provide their own developer app credentials for live provider logins.
 - OAuth state expires after 10 minutes.
 - The renderer has no Node integration in the desktop shell.
 - External links open outside the app only for approved release URLs.
@@ -28,6 +29,7 @@ Until signing is set up, users can verify the release came from this public repo
 ## Remaining Production Work
 
 - Code-sign the installer and app executable.
+- Add a hosted OAuth relay for production distribution so ordinary users can connect Meta/Shopify/TikTok without creating developer apps, while shared secrets stay server-side.
 - Add a dedicated in-app Ollama setup flow with explicit user confirmation.
 - Add automated dependency scanning for npm packages.
 - Consider MSIX packaging once the app identity and signing path are stable.
