@@ -1,5 +1,5 @@
 {
-  "version": "0.3.15",
+  "version": "0.3.16",
   "downloadUrl": "https://github.com/rookepoole/LittleBird/releases/latest/download/LittleBirdSetup.exe",
-  "releaseNotes": "Adds a real-time startup system checker for localhost, security probes, Ollama status, update feed status, and integration readiness."
+  "releaseNotes": "Adds Ollama auto-start recovery, clearer local LLM diagnostics, and a longer first-run chat timeout for cold model starts."
 }

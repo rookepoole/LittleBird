@@ -1,6 +1,6 @@
 {
   "name": "little-bird",
-  "version": "0.3.15",
+  "version": "0.3.16",
   "description": "Little Bird",
   "main": "electron/main.js",
   "license": "MIT",
