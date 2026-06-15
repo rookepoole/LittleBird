@@ -15,7 +15,7 @@ start-little-bird.cmd
 Then open:
 
 ```text
-http://localhost:4173/?v=0.3.14
+http://localhost:4173/?v=0.3.15
 ```
 
 If that port is busy:
@@ -27,7 +27,7 @@ start-little-bird.cmd --port=4192
 and open:
 
 ```text
-http://localhost:4192/?v=0.3.14
+http://localhost:4192/?v=0.3.15
 ```
 
 ## Requirements
