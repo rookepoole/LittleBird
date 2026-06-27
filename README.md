@@ -60,3 +60,7 @@ This keeps the public installer safer because no central Little Bird OAuth secre
 Little Bird stores integration tokens and desktop-saved OAuth app credentials only on the user's local machine in ignored dotfiles. Do not commit `.env`, `.little-bird-tokens.json`, `.little-bird-oauth-state.json`, or local credential files.
 
 Windows may warn about unsigned installers until Little Bird is code-signed and has download reputation. See [SECURITY.md](SECURITY.md).
+
+## License
+
+Little Bird is released under the [MIT License](LICENSE).
